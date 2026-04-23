@@ -154,3 +154,42 @@ def test_mail_get_tool_serializes_attachment_paths(mocker, tmp_path) -> None:
     assert result["attachment_paths"] == [str(p1), str(p2)]
     # Verify Path objects were coerced to strings (JSON-serializable)
     assert all(isinstance(p, str) for p in result["attachment_paths"])
+
+
+def test_cal_list_events_tool(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.cal import EventSummary
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    cfg = MagicMock(user_calendar_id="jimmy@example.com")
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    mocker.patch.object(
+        mcp_server.cal_core,
+        "list_events",
+        return_value=[EventSummary(id="e1", title="Lunch", start="s", end="e", attendees=[])],
+    )
+    result = mcp_server.cal_list_events(
+        calendar="user", start="s", end="e"
+    )
+    assert result[0]["id"] == "e1"
+    _, kwargs = mcp_server.cal_core.list_events.call_args
+    assert kwargs["calendar_id"] == "jimmy@example.com"
+
+
+def test_cal_create_event_tool(mocker) -> None:
+    from hermes_google import mcp_server
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    cfg = MagicMock(user_calendar_id="jimmy@example.com")
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    mocker.patch.object(mcp_server.cal_core, "create_event", return_value="new-1")
+
+    result = mcp_server.cal_create_event(
+        calendar="hermes",
+        title="Meet",
+        start="2026-04-24T10:00:00+09:00",
+        end="2026-04-24T11:00:00+09:00",
+    )
+    assert result == {"id": "new-1"}

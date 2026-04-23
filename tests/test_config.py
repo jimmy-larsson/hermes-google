@@ -114,3 +114,24 @@ def test_load_config_invalid_toml_raises_config_error(tmp_path: Path) -> None:
     path.write_text("this is = not valid = toml =")
     with pytest.raises(config_module.ConfigError, match="not valid TOML"):
         load_config(path)
+
+
+def test_load_config_user_calendar_id(tmp_path: Path) -> None:
+    path = _write_config(
+        tmp_path,
+        """
+        [user]
+        email = "jimmy@example.com"
+        calendar_id = "jimmy@example.com"
+        [hermes_account]
+        email = "hermes-jimmy@gmail.com"
+        [paths]
+        credentials = "/tmp/c.json"
+        cache = "/tmp/cache"
+        log = "/tmp/cache/log.jsonl"
+        [mcp]
+        name = "hermes-google"
+        """,
+    )
+    cfg = load_config(path)
+    assert cfg.user_calendar_id == "jimmy@example.com"

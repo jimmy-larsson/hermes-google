@@ -13,6 +13,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from hermes_google.core import auth as auth_core
+from hermes_google.core import cal as cal_core
 from hermes_google.core import mail as mail_core
 from hermes_google.core.auth import AuthError, Services
 from hermes_google.core.config import Config, ConfigError, load_config
@@ -177,6 +178,77 @@ def mail_archive(message_id: str) -> dict[str, Any]:
     services = _get_services()
     mail_core.archive(services.gmail, message_id=message_id)
     return {"id": message_id}
+
+
+def _resolve_cal(alias: str) -> str:
+    cfg = _get_config()
+    return cal_core.resolve_calendar_id(alias, user_calendar_id=cfg.user_calendar_id)
+
+
+@mcp.tool
+def cal_list_calendars() -> list[dict[str, Any]]:
+    """List calendars visible to Hermes (own + shared-to-Hermes)."""
+    services = _get_services()
+    return [asdict(c) for c in cal_core.list_calendars(services.calendar)]
+
+
+@mcp.tool
+def cal_list_events(calendar: str, start: str, end: str) -> list[dict[str, Any]]:
+    """List events in a time range. `calendar` is 'user', 'hermes', or a Google calendar ID."""
+    services = _get_services()
+    cid = _resolve_cal(calendar)
+    return [
+        asdict(e)
+        for e in cal_core.list_events(
+            services.calendar, calendar_id=cid, time_min=start, time_max=end
+        )
+    ]
+
+
+@mcp.tool
+def cal_create_event(
+    calendar: str,
+    title: str,
+    start: str,
+    end: str,
+    attendees: list[str] | None = None,
+    description: str | None = None,
+) -> dict[str, Any]:
+    """Create an event. Requires user confirmation before calling."""
+    services = _get_services()
+    cid = _resolve_cal(calendar)
+    event_id = cal_core.create_event(
+        services.calendar,
+        calendar_id=cid,
+        title=title,
+        start=start,
+        end=end,
+        attendees=attendees,
+        description=description,
+    )
+    return {"id": event_id}
+
+
+@mcp.tool
+def cal_update_event(
+    calendar: str, event_id: str, fields: dict[str, Any]
+) -> dict[str, Any]:
+    """Patch an event. Requires user confirmation before calling."""
+    services = _get_services()
+    cid = _resolve_cal(calendar)
+    cal_core.update_event(
+        services.calendar, calendar_id=cid, event_id=event_id, fields=fields
+    )
+    return {"id": event_id}
+
+
+@mcp.tool
+def cal_delete_event(calendar: str, event_id: str) -> dict[str, Any]:
+    """Delete an event. Requires user confirmation before calling."""
+    services = _get_services()
+    cid = _resolve_cal(calendar)
+    cal_core.delete_event(services.calendar, calendar_id=cid, event_id=event_id)
+    return {"id": event_id}
 
 
 def main() -> None:

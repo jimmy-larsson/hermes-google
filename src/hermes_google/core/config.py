@@ -24,6 +24,7 @@ class Config:
     log_path: Path
     mcp_name: str
     drive_default_parent_folder_id: str | None = None
+    user_calendar_id: str | None = None
 
 
 def default_config_path() -> Path:
@@ -59,4 +60,5 @@ def load_config(path: Path | None = None) -> Config:
         log_path=_expand(_required(data, "paths", "log")),
         mcp_name=_required(data, "mcp", "name"),
         drive_default_parent_folder_id=data.get("drive", {}).get("default_parent_folder_id"),
+        user_calendar_id=data.get("user", {}).get("calendar_id"),
     )
