@@ -113,8 +113,8 @@ def update_event(
     """Patch arbitrary event fields.
 
     The caller (MCP tool layer) is responsible for restricting `fields` to
-    user-intended keys. Core does not filter — Task 10's cal_update_event
-    wrapper performs the confirmation gate per spec §9.
+    user-intended keys. Core does not filter — the MCP wrapper layer
+    performs the confirmation gate before invoking this function.
     """
     try:
         service.events().patch(

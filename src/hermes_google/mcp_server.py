@@ -181,6 +181,7 @@ def mail_archive(message_id: str) -> dict[str, Any]:
 
 
 def _resolve_cal(alias: str) -> str:
+    """Resolve a calendar alias ('user', 'hermes', or a raw ID) to a Google Calendar ID."""
     cfg = _get_config()
     return cal_core.resolve_calendar_id(alias, user_calendar_id=cfg.user_calendar_id)
 
@@ -194,7 +195,12 @@ def cal_list_calendars() -> list[dict[str, Any]]:
 
 @mcp.tool
 def cal_list_events(calendar: str, start: str, end: str) -> list[dict[str, Any]]:
-    """List events in a time range. `calendar` is 'user', 'hermes', or a Google calendar ID."""
+    """List events in a time range.
+
+    `calendar` is 'user', 'hermes', or a Google calendar ID.
+    `start` and `end` must be RFC 3339 datetimes with timezone
+    offset (e.g., "2026-04-24T10:00:00+09:00"). Bare dates are rejected.
+    """
     services = _get_services()
     cid = _resolve_cal(calendar)
     return [
