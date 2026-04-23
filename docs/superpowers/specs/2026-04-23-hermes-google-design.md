@@ -58,11 +58,11 @@ This keeps the auth story simple and avoids convention-based isolation (where cr
             ▼
 ┌─────────────────────────────┐     OAuth      ┌──────────────────────────┐
 │ Hermes Google account       │ ◄──────────────┤ Hermes container         │
-│  - Gmail inbox (queue)      │                │  - hermes-google      │
+│  - Gmail inbox (queue)      │                │  - hermes-google         │
 │  - Hermes's own calendar    │                │    MCP server (stdio)    │
 │  - Hermes's Drive           │                │  - argparse CLI (debug)  │
-└───────────┬─────────────────┘                │  - Refresh token on     │
-            ▲                                  │    volume               │
+└───────────┬─────────────────┘                │  - Refresh token on      │
+            ▲                                  │    volume                │
             │                                  └──────────────────────────┘
             │ Google Calendar sharing
             │ Google Drive sharing
@@ -418,7 +418,6 @@ Attachments contribute to Claude's context. The instructions block reminds Herme
 - E2E forward → list-pending → get → send-draft → mark-read → archive, using a test label in Hermes's own account (send-to-self pattern)
 - Calendar create/update/delete roundtrip on a test calendar
 - Drive upload/get/move/delete roundtrip on a test folder
-- `/start` briefing: verify email + calendar sections render correctly with real data
 
 ### CI
 
