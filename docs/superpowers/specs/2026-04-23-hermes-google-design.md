@@ -1,4 +1,4 @@
-# hermes-workspace — design spec
+# hermes-google — design spec
 
 **Status:** Draft for review
 **Date:** 2026-04-23
@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-`hermes-workspace` is a Python package that gives Hermes (Claude Code running as a personal assistant) scoped access to Gmail, Google Calendar, and Google Drive — enough to help with email drafting, inbox triage, scheduling, and document management, without granting Hermes access to the user's personal Google account.
+`hermes-google` is a Python package that gives Hermes (Claude Code running as a personal assistant) scoped access to Gmail, Google Calendar, and Google Drive — enough to help with email drafting, inbox triage, scheduling, and document management, without granting Hermes access to the user's personal Google account.
 
 Access is brokered through a **dedicated Hermes Google account** per user. The user forwards emails they want help with (via a Gmail label rule or manual forward) to Hermes's account; Hermes reads that queue at session start and on demand, drafts replies, and returns them to the user via email. Calendar and Drive are accessed through Google's native sharing — the user shares their calendar and specific Drive files/folders with Hermes's account.
 
@@ -58,7 +58,7 @@ This keeps the auth story simple and avoids convention-based isolation (where cr
             ▼
 ┌─────────────────────────────┐     OAuth      ┌──────────────────────────┐
 │ Hermes Google account       │ ◄──────────────┤ Hermes container         │
-│  - Gmail inbox (queue)      │                │  - hermes-workspace      │
+│  - Gmail inbox (queue)      │                │  - hermes-google      │
 │  - Hermes's own calendar    │                │    MCP server (stdio)    │
 │  - Hermes's Drive           │                │  - argparse CLI (debug)  │
 └───────────┬─────────────────┘                │  - Refresh token on     │
@@ -96,7 +96,7 @@ Flows describe how the MCP tools are used in practice. They assume a generic cal
 4. Hermes calls `mail_list_pending` (or `mail_search` with a hint from the user's phrasing) to locate the right message. If multiple candidates match, Hermes asks the user to disambiguate.
 5. Hermes calls `mail_get(id)`:
    - Server unwraps the `Fwd:` chain, extracting the *original* sender, subject, body, and in-reply-to metadata.
-   - Server downloads attachments to `~/.cache/hermes-workspace/<message-id>/` and includes paths in the response.
+   - Server downloads attachments to `~/.cache/hermes-google/<message-id>/` and includes paths in the response.
 6. Hermes reads the message, uses the `Read` tool on any attachment paths it needs, collaborates with the user on a draft.
 7. Hermes calls `mail_send_draft(to=user_email, subject="Draft: Re: <orig>", body=<draft>)`.
 8. Hermes calls `mail_mark_read(id)` on Hermes's copy — so subsequent `mail_list_pending` calls (including the next `/start`) don't show it as new.
@@ -148,7 +148,7 @@ For events Hermes should own (scheduled notes, reminders to user + partner), `ca
 
 1. User: "pull the Q1 report from Drive."
 2. Hermes calls `drive_search(query="Q1 report")` → list of files Hermes has access to.
-3. Hermes picks or confirms the file, then `drive_get(file_id)` downloads to `~/.cache/hermes-workspace/drive/<file-id>/`.
+3. Hermes picks or confirms the file, then `drive_get(file_id)` downloads to `~/.cache/hermes-google/drive/<file-id>/`.
 4. Hermes uses the `Read` tool on the downloaded path to parse contents.
 
 **Upload / Move / Update:**
@@ -170,15 +170,15 @@ The explicit-phrase requirement is a deliberate friction gate on the most destru
 ### 7.1 Package layout
 
 ```
-hermes-workspace/
+hermes-google/
 ├── pyproject.toml
 ├── README.md
 ├── docs/
 │   └── superpowers/
 │       └── specs/
-│           └── 2026-04-23-hermes-workspace-design.md
+│           └── 2026-04-23-hermes-google-design.md
 ├── src/
-│   └── hermes_workspace/
+│   └── hermes_google/
 │       ├── __init__.py
 │       ├── core/
 │       │   ├── __init__.py
@@ -259,7 +259,7 @@ The instructions block is the primary place action policies live. The skill fold
 
 ### 7.4 Config
 
-`~/.config/hermes-workspace/config.toml`:
+`~/.config/hermes-google/config.toml`:
 
 ```toml
 [user]
@@ -272,12 +272,12 @@ email = "hermes-jimmy@gmail.com"     # the dedicated account
 default_parent_folder_id = "..."     # optional — default target for drive_upload without folder_id
 
 [paths]
-credentials = "~/.config/hermes-workspace/credentials.json"
-cache = "~/.cache/hermes-workspace"
-log = "~/.cache/hermes-workspace/log.jsonl"
+credentials = "~/.config/hermes-google/credentials.json"
+cache = "~/.cache/hermes-google"
+log = "~/.cache/hermes-google/log.jsonl"
 
 [mcp]
-name = "hermes-workspace"            # name surfaced in Claude Code
+name = "hermes-google"            # name surfaced in Claude Code
 ```
 
 Loaded once by the MCP server (or CLI) at startup. Changes require a server restart.
@@ -287,15 +287,15 @@ Loaded once by the MCP server (or CLI) at startup. Changes require a server rest
 ### 8.1 One-time setup flow
 
 1. Create a Hermes Google account (e.g., `hermes-jimmy@gmail.com`). Manual step.
-2. Create a Google Cloud project, enable Gmail/Calendar/Drive APIs, create an OAuth 2.0 Client ID (Desktop application type). Save `client_secret.json` to `~/.config/hermes-workspace/`.
-3. Run `hermes-workspace auth login` (from a shell, one-time):
+2. Create a Google Cloud project, enable Gmail/Calendar/Drive APIs, create an OAuth 2.0 Client ID (Desktop application type). Save `client_secret.json` to `~/.config/hermes-google/`.
+3. Run `hermes-google auth login` (from a shell, one-time):
    - Opens a browser (or prints a URL) for OAuth consent
    - User signs in as the Hermes account (not their personal account)
    - Consents to scopes (see §8.2)
-   - Refresh token saved to `~/.config/hermes-workspace/credentials.json` with mode `0600`
+   - Refresh token saved to `~/.config/hermes-google/credentials.json` with mode `0600`
 4. Register the MCP server with Claude Code:
    ```bash
-   claude mcp add hermes-workspace -- python -m hermes_workspace.mcp_server
+   claude mcp add hermes-google -- python -m hermes_google.mcp_server
    ```
 5. In the user's personal Gmail, create filters:
    - `label:hermes-review` → forward to Hermes's address (Gmail prompts the user to verify the destination — one-time click)
@@ -325,10 +325,10 @@ Default position is the stacked-scope option; revisit if it proves impractical.
 
 ### 8.3 Token handling
 
-- Refresh tokens stored at `~/.config/hermes-workspace/credentials.json`, mode `0600`
+- Refresh tokens stored at `~/.config/hermes-google/credentials.json`, mode `0600`
 - File is on the persistent volume mount — survives container restarts
 - Access tokens refreshed on demand by the Google auth library; no manual rotation
-- MCP server loads the token at startup; if missing or revoked, every tool call returns a structured error instructing the user to re-run `hermes-workspace auth login` in a shell
+- MCP server loads the token at startup; if missing or revoked, every tool call returns a structured error instructing the user to re-run `hermes-google auth login` in a shell
 - `auth revoke` (CLI) deletes the local token and calls Google's revocation endpoint
 - Compromise recovery: `auth revoke` + change Hermes account password + re-run `auth login` + restart MCP server
 
@@ -364,13 +364,13 @@ Structural backstops:
 
 - `mail_send_draft` server-side: rejects any `to` that isn't the configured user email. Cannot exfiltrate via email.
 - `drive_delete` and Drive writes: instructions require explicit confirmation. No server-side enforcement (model compliance), but the destructive blast radius is user-visible in the confirmation prompt.
-- Attachment paths returned by `mail_get` and `drive_get` are sandboxed to `~/.cache/hermes-workspace/`; Hermes has no incentive or path to read outside that.
+- Attachment paths returned by `mail_get` and `drive_get` are sandboxed to `~/.cache/hermes-google/`; Hermes has no incentive or path to read outside that.
 
 ## 11. Audit & logging
 
 - **Gmail Sent folder of Hermes's account** is the canonical audit log for outbound email — every draft Hermes delivered is visible there indefinitely
 - **Calendar event metadata** — `organizer: hermes@...` on every event Hermes created
-- **Server log** — `~/.cache/hermes-workspace/log.jsonl`, one line per tool invocation:
+- **Server log** — `~/.cache/hermes-google/log.jsonl`, one line per tool invocation:
   ```json
   {"ts": "...", "tool": "mail_send_draft", "args_hash": "...", "result": "ok", "latency_ms": 432}
   ```
@@ -386,16 +386,16 @@ Any of these independently removes an integration surface:
 | Delete `label:hermes-review → forward` filter in user's Gmail | New emails stop flowing to Hermes |
 | Unshare user's calendar with Hermes account | Calendar access gone |
 | Unshare a Drive file/folder | Drive access to that item gone |
-| `hermes-workspace auth revoke` | MCP server stops working entirely |
-| `claude mcp remove hermes-workspace` | Hermes no longer sees the tools; Google data untouched |
+| `hermes-google auth revoke` | MCP server stops working entirely |
+| `claude mcp remove hermes-google` | Hermes no longer sees the tools; Google data untouched |
 | Delete Hermes Google account | Total shutdown |
 
 No single revocation is load-bearing; each step can be rolled back individually.
 
 ## 13. Attachment handling
 
-- `mail_get` downloads every attachment to `~/.cache/hermes-workspace/<message-id>/<filename>` and includes paths in the response
-- `drive_get` downloads the file to `~/.cache/hermes-workspace/drive/<file-id>/<filename>` and returns the path
+- `mail_get` downloads every attachment to `~/.cache/hermes-google/<message-id>/<filename>` and includes paths in the response
+- `drive_get` downloads the file to `~/.cache/hermes-google/drive/<file-id>/<filename>` and returns the path
 - The MCP instructions direct Hermes to use Claude Code's `Read` tool on these paths — native PDF/image/text parsing
 - Large attachments (>10 MB): server warns in the response and proceeds; Hermes should prefer paged reads for PDFs >10 pages (native `Read` parameter)
 - Scratch directory cleanup: on every server startup AND every `mail_get` / `drive_get` call, remove files older than 30 days
@@ -427,12 +427,12 @@ Attachments contribute to Claude's context. The instructions block reminds Herme
 
 ## 15. Deployment & install
 
-- Package installs via `pip install -e .` into the `hermes-workspace` conda env (Python 3.12)
+- Package installs via `pip install -e .` into the `hermes-google` conda env (Python 3.12)
 - `scripts/setup.sh` performs:
   1. Create conda env, install package
-  2. Prompt for Google Cloud OAuth client secret, place in `~/.config/hermes-workspace/`
-  3. Run `hermes-workspace auth login`
-  4. Register MCP server with Claude Code: `claude mcp add hermes-workspace -- python -m hermes_workspace.mcp_server`
+  2. Prompt for Google Cloud OAuth client secret, place in `~/.config/hermes-google/`
+  3. Run `hermes-google auth login`
+  4. Register MCP server with Claude Code: `claude mcp add hermes-google -- python -m hermes_google.mcp_server`
   5. Print the Gmail filter rules the user needs to create manually (with the Hermes account address filled in)
   6. Print the calendar/Drive sharing steps with direct links
 - After setup, the user restarts their Hermes session to pick up the new MCP tools. The tools are then available to any caller (skills, slash commands, ad-hoc requests).
