@@ -167,10 +167,14 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
     )
 
 
-def _build_raw(to: str, subject: str, body: str) -> str:
+def _build_raw(to: str, subject: str, body: str, in_reply_to: str | None = None) -> str:
+    # From is populated server-side by Gmail when userId="me".
     msg = MIMEText(body, _charset="utf-8")
     msg["To"] = to
     msg["Subject"] = subject
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"] = in_reply_to
     return base64.urlsafe_b64encode(msg.as_bytes()).decode()
 
 
@@ -187,16 +191,8 @@ def send_draft(
         raise MailError(
             f"send_draft: only allowed destination is {user_email}; got {to}"
         )
-    raw = _build_raw(to, subject, body)
-    if in_reply_to:
-        # Re-encode with the header added
-        msg = MIMEText(body, _charset="utf-8")
-        msg["To"] = to
-        msg["Subject"] = subject
-        msg["In-Reply-To"] = in_reply_to
-        msg["References"] = in_reply_to
-        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     try:
+        raw = _build_raw(to, subject, body, in_reply_to=in_reply_to)
         resp = (
             service.users()
             .messages()
@@ -205,7 +201,10 @@ def send_draft(
         )
     except Exception as exc:  # noqa: BLE001
         raise MailError(f"failed to send: {exc}") from exc
-    return resp["id"]
+    try:
+        return resp["id"]
+    except KeyError as exc:
+        raise MailError(f"malformed send response: {resp!r}") from exc
 
 
 def mark_read(service: Any, *, message_id: str) -> None:

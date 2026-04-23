@@ -230,3 +230,30 @@ def test_archive_removes_inbox_label(mock_gmail_service: MagicMock) -> None:
     _, kwargs = mock_gmail_service.users().messages().modify.call_args
     assert kwargs["id"] == "m1"
     assert kwargs["body"] == {"removeLabelIds": ["INBOX"]}
+
+
+def test_send_draft_with_in_reply_to_adds_threading_headers(
+    mock_gmail_service: MagicMock,
+) -> None:
+    from hermes_google.core.mail import send_draft
+
+    send_call = MagicMock()
+    send_call.execute.return_value = {"id": "sent-2"}
+    mock_gmail_service.users().messages().send.return_value = send_call
+
+    result = send_draft(
+        mock_gmail_service,
+        user_email="jimmy@example.com",
+        to="jimmy@example.com",
+        subject="Re: thread",
+        body="reply body",
+        in_reply_to="<original@example.com>",
+    )
+    assert result == "sent-2"
+
+    _, kwargs = mock_gmail_service.users().messages().send.call_args
+    # Decode the raw body and verify In-Reply-To + References headers are set
+    import base64 as _b64
+    raw = _b64.urlsafe_b64decode(kwargs["body"]["raw"]).decode()
+    assert "In-Reply-To: <original@example.com>" in raw
+    assert "References: <original@example.com>" in raw
