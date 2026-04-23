@@ -13,7 +13,7 @@ from fastmcp import FastMCP
 
 from hermes_google.core import auth as auth_core
 from hermes_google.core.auth import AuthError, Services
-from hermes_google.core.config import Config, load_config
+from hermes_google.core.config import Config, ConfigError, load_config
 
 INSTRUCTIONS = """
 You are calling the hermes-google MCP server, which provides scoped access to a
@@ -74,12 +74,23 @@ def _get_services() -> Services:
     return _services
 
 
+def _reset_services() -> None:
+    """Clear cached services + config. Call after credentials rotate."""
+    global _config, _services
+    _config = None
+    _services = None
+
+
 mcp = FastMCP("hermes-google", instructions=INSTRUCTIONS)
 
 
 @mcp.tool
 def auth_status() -> dict[str, Any]:
-    """Report whether stored credentials are valid and loaded."""
+    """Report whether stored credentials are valid and loaded.
+
+    Returns: dict with keys `valid`, `expired`, `scopes`, and — only on
+    failure — `error` (string description of the auth/config failure).
+    """
     try:
         creds = _get_credentials()
         return {
@@ -87,7 +98,7 @@ def auth_status() -> dict[str, Any]:
             "expired": bool(getattr(creds, "expired", False)),
             "scopes": list(getattr(creds, "scopes", []) or []),
         }
-    except AuthError as exc:
+    except (AuthError, ConfigError) as exc:
         return {"valid": False, "expired": False, "scopes": [], "error": str(exc)}
 
 

@@ -41,3 +41,25 @@ def test_auth_status_missing_credentials(mocker) -> None:
     result = mcp_server.auth_status()
     assert result["valid"] is False
     assert "missing" in result["error"]
+
+
+def test_auth_status_config_error(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.config import ConfigError
+
+    mocker.patch.object(
+        mcp_server, "_get_credentials", side_effect=ConfigError("bad config")
+    )
+    result = mcp_server.auth_status()
+    assert result["valid"] is False
+    assert "bad config" in result["error"]
+
+
+def test_reset_services_clears_cache(mocker) -> None:
+    from hermes_google import mcp_server
+
+    mcp_server._config = "sentinel_cfg"
+    mcp_server._services = "sentinel_svc"
+    mcp_server._reset_services()
+    assert mcp_server._config is None
+    assert mcp_server._services is None
