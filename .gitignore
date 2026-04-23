@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+.venv/
+# Local only — never commit OAuth artifacts or cache
+credentials.json
+client_secret*.json
+.cache/

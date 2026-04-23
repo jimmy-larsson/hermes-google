@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-google"
+version = "0.1.0"
+description = "MCP server giving Hermes scoped Gmail/Calendar/Drive access via a dedicated Google account"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=2.0",
+    "google-api-python-client>=2.120",
+    "google-auth>=2.28",
+    "google-auth-oauthlib>=1.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.12",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+hermes-google = "hermes_google.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
