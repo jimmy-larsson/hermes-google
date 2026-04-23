@@ -55,6 +55,13 @@ POLICIES:
 _config: Config | None = None
 _services: Services | None = None
 
+_MAX_LIMIT = 100
+
+
+def _clamp_limit(limit: int) -> int:
+    """Clamp caller-supplied limit to [1, _MAX_LIMIT]."""
+    return min(max(1, limit), _MAX_LIMIT)
+
 
 def _get_config() -> Config:
     global _config
@@ -106,25 +113,28 @@ def auth_status() -> dict[str, Any]:
 
 @mcp.tool
 def mail_list_pending(limit: int = 20) -> list[dict[str, Any]]:
-    """List unread forwarded emails in Hermes's inbox (newest first)."""
+    """List unread forwarded emails in Hermes's inbox (newest first). Max 100 per call."""
     services = _get_services()
-    return [asdict(m) for m in mail_core.list_pending(services.gmail, limit=limit)]
+    return [asdict(m) for m in mail_core.list_pending(services.gmail, limit=_clamp_limit(limit))]
 
 
 @mcp.tool
 def mail_search(query: str, limit: int = 20) -> list[dict[str, Any]]:
-    """Gmail search within Hermes's own inbox."""
+    """Gmail search within Hermes's own inbox. Max 100 per call."""
     services = _get_services()
-    return [asdict(m) for m in mail_core.search(services.gmail, query=query, limit=limit)]
+    return [
+        asdict(m)
+        for m in mail_core.search(services.gmail, query=query, limit=_clamp_limit(limit))
+    ]
 
 
 @mcp.tool
-def mail_get(id: str) -> dict[str, Any]:
+def mail_get(message_id: str) -> dict[str, Any]:
     """Fetch a message. Returns unwrapped original sender/subject/body + attachment paths."""
     services = _get_services()
     cfg = _get_config()
     detail = mail_core.get_message(
-        services.gmail, message_id=id, cache_dir=cfg.cache_dir
+        services.gmail, message_id=message_id, cache_dir=cfg.cache_dir
     )
     data = asdict(detail)
     data["attachment_paths"] = [str(p) for p in detail.attachment_paths]
@@ -154,19 +164,19 @@ def mail_send_draft(
 
 
 @mcp.tool
-def mail_mark_read(id: str) -> dict[str, Any]:
+def mail_mark_read(message_id: str) -> dict[str, Any]:
     """Mark Hermes's copy read (keeps it in the inbox)."""
     services = _get_services()
-    mail_core.mark_read(services.gmail, message_id=id)
-    return {"ok": True, "id": id}
+    mail_core.mark_read(services.gmail, message_id=message_id)
+    return {"id": message_id}
 
 
 @mcp.tool
-def mail_archive(id: str) -> dict[str, Any]:
+def mail_archive(message_id: str) -> dict[str, Any]:
     """Archive Hermes's copy (removes from inbox). Never call without user confirmation."""
     services = _get_services()
-    mail_core.archive(services.gmail, message_id=id)
-    return {"ok": True, "id": id}
+    mail_core.archive(services.gmail, message_id=message_id)
+    return {"id": message_id}
 
 
 def main() -> None:

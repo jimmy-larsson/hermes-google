@@ -111,6 +111,46 @@ def test_mail_archive_tool_calls_core(mocker) -> None:
     fake_services = MagicMock()
     mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
     spy = mocker.patch.object(mcp_server.mail_core, "archive")
-    mcp_server.mail_archive(id="m1")
+    mcp_server.mail_archive(message_id="m1")
     _, kwargs = spy.call_args
     assert kwargs["message_id"] == "m1"
+
+
+def test_mail_list_pending_clamps_limit(mocker) -> None:
+    from hermes_google import mcp_server
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    spy = mocker.patch.object(mcp_server.mail_core, "list_pending", return_value=[])
+    mcp_server.mail_list_pending(limit=10_000)
+    _, kwargs = spy.call_args
+    assert kwargs["limit"] == 100  # clamped
+
+
+def test_mail_get_tool_serializes_attachment_paths(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.mail import MessageDetail
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    cfg = MagicMock(cache_dir=tmp_path)
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    p1 = tmp_path / "a.pdf"
+    p2 = tmp_path / "b.png"
+    mocker.patch.object(
+        mcp_server.mail_core,
+        "get_message",
+        return_value=MessageDetail(
+            id="m1",
+            thread_id="t",
+            original_sender="s",
+            original_subject="x",
+            original_body="b",
+            in_reply_to=None,
+            attachment_paths=[p1, p2],
+        ),
+    )
+    result = mcp_server.mail_get(message_id="m1")
+    assert result["attachment_paths"] == [str(p1), str(p2)]
+    # Verify Path objects were coerced to strings (JSON-serializable)
+    assert all(isinstance(p, str) for p in result["attachment_paths"])
