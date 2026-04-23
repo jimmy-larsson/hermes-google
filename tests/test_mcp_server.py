@@ -63,3 +63,54 @@ def test_reset_services_clears_cache(mocker) -> None:
     mcp_server._reset_services()
     assert mcp_server._config is None
     assert mcp_server._services is None
+
+
+def test_mail_list_pending_tool(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.mail import PendingMessage
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    mocker.patch.object(
+        mcp_server.mail_core,
+        "list_pending",
+        return_value=[
+            PendingMessage(
+                id="m1", thread_id="t", sender="s", subject="x", date="d", snippet="..."
+            )
+        ],
+    )
+    result = mcp_server.mail_list_pending(limit=5)
+    assert result == [
+        {"id": "m1", "thread_id": "t", "sender": "s", "subject": "x", "date": "d",
+         "snippet": "..."}
+    ]
+
+
+def test_mail_send_draft_tool_passes_user_email(mocker) -> None:
+    from hermes_google import mcp_server
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    cfg = MagicMock(user_email="jimmy@example.com")
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    send_spy = mocker.patch.object(mcp_server.mail_core, "send_draft", return_value="sent-1")
+
+    result = mcp_server.mail_send_draft(
+        to="jimmy@example.com", subject="s", body="b"
+    )
+    assert result == {"id": "sent-1"}
+    _, kwargs = send_spy.call_args
+    assert kwargs["user_email"] == "jimmy@example.com"
+    assert kwargs["to"] == "jimmy@example.com"
+
+
+def test_mail_archive_tool_calls_core(mocker) -> None:
+    from hermes_google import mcp_server
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    spy = mocker.patch.object(mcp_server.mail_core, "archive")
+    mcp_server.mail_archive(id="m1")
+    _, kwargs = spy.call_args
+    assert kwargs["message_id"] == "m1"

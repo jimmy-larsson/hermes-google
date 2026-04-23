@@ -7,11 +7,13 @@ Tool functions are thin wrappers around `hermes_google.core.*` that:
 """
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from fastmcp import FastMCP
 
 from hermes_google.core import auth as auth_core
+from hermes_google.core import mail as mail_core
 from hermes_google.core.auth import AuthError, Services
 from hermes_google.core.config import Config, ConfigError, load_config
 
@@ -100,6 +102,71 @@ def auth_status() -> dict[str, Any]:
         }
     except (AuthError, ConfigError) as exc:
         return {"valid": False, "expired": False, "scopes": [], "error": str(exc)}
+
+
+@mcp.tool
+def mail_list_pending(limit: int = 20) -> list[dict[str, Any]]:
+    """List unread forwarded emails in Hermes's inbox (newest first)."""
+    services = _get_services()
+    return [asdict(m) for m in mail_core.list_pending(services.gmail, limit=limit)]
+
+
+@mcp.tool
+def mail_search(query: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Gmail search within Hermes's own inbox."""
+    services = _get_services()
+    return [asdict(m) for m in mail_core.search(services.gmail, query=query, limit=limit)]
+
+
+@mcp.tool
+def mail_get(id: str) -> dict[str, Any]:
+    """Fetch a message. Returns unwrapped original sender/subject/body + attachment paths."""
+    services = _get_services()
+    cfg = _get_config()
+    detail = mail_core.get_message(
+        services.gmail, message_id=id, cache_dir=cfg.cache_dir
+    )
+    data = asdict(detail)
+    data["attachment_paths"] = [str(p) for p in detail.attachment_paths]
+    return data
+
+
+@mcp.tool
+def mail_send_draft(
+    to: str, subject: str, body: str, in_reply_to: str | None = None
+) -> dict[str, Any]:
+    """Deliver a draft from Hermes's account to the user's own inbox.
+
+    The destination is restricted to the configured user email; any other
+    `to` value is rejected by the server.
+    """
+    services = _get_services()
+    cfg = _get_config()
+    sent_id = mail_core.send_draft(
+        services.gmail,
+        user_email=cfg.user_email,
+        to=to,
+        subject=subject,
+        body=body,
+        in_reply_to=in_reply_to,
+    )
+    return {"id": sent_id}
+
+
+@mcp.tool
+def mail_mark_read(id: str) -> dict[str, Any]:
+    """Mark Hermes's copy read (keeps it in the inbox)."""
+    services = _get_services()
+    mail_core.mark_read(services.gmail, message_id=id)
+    return {"ok": True, "id": id}
+
+
+@mcp.tool
+def mail_archive(id: str) -> dict[str, Any]:
+    """Archive Hermes's copy (removes from inbox). Never call without user confirmation."""
+    services = _get_services()
+    mail_core.archive(services.gmail, message_id=id)
+    return {"ok": True, "id": id}
 
 
 def main() -> None:
