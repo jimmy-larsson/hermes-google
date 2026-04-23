@@ -4,7 +4,10 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from hermes_google.core.drive import (
+    DriveError,
     FileRef,
     delete_file,
     get_file,
@@ -144,3 +147,31 @@ def test_delete_file(mock_drive_service: MagicMock) -> None:
     delete_file(mock_drive_service, file_id="f1")
     _, kwargs = mock_drive_service.files().delete.call_args
     assert kwargs["fileId"] == "f1"
+
+
+def test_get_file_rejects_path_traversal_name(
+    tmp_path: Path, mock_drive_service: MagicMock
+) -> None:
+    meta_call = MagicMock()
+    meta_call.execute.return_value = {
+        "id": "f1", "name": "../../etc/passwd", "mimeType": "text/plain"
+    }
+    mock_drive_service.files().get.return_value = meta_call
+
+    with pytest.raises(DriveError, match="unsafe filename"):
+        get_file(mock_drive_service, file_id="f1", cache_dir=tmp_path)
+
+
+def test_upload_file_malformed_response_raises(
+    tmp_path: Path, mock_drive_service: MagicMock, mocker
+) -> None:
+    local = tmp_path / "notes.md"
+    local.write_text("hello")
+
+    mocker.patch("hermes_google.core.drive.MediaFileUpload")
+    call = MagicMock()
+    call.execute.return_value = {"name": "notes.md"}  # missing "id"
+    mock_drive_service.files().create.return_value = call
+
+    with pytest.raises(DriveError, match="malformed upload response"):
+        upload_file(mock_drive_service, local_path=local, name="notes.md")

@@ -1,7 +1,7 @@
 """Drive operations. Every function takes a `service` argument."""
 from __future__ import annotations
 
-import io
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -69,17 +69,35 @@ def get_file(service: Any, *, file_id: str, cache_dir: Path) -> Path:
     except Exception as exc:  # noqa: BLE001
         raise DriveError(f"get metadata failed: {exc}") from exc
 
+    # I1: validate filename before touching the filesystem.
+    raw_name = meta["name"]
+    safe_name = os.path.basename(raw_name)
+    # Reject if basename stripped anything (path separators / traversal components
+    # present), if the result is empty, or if it's a dot-only name.
+    if (
+        safe_name != raw_name
+        or not safe_name
+        or safe_name in {".", ".."}
+        or "/" in safe_name
+        or "\\" in safe_name
+    ):
+        raise DriveError(f"unsafe filename: {raw_name!r}")
+
     target_dir = cache_dir / "drive" / file_id
     target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / meta["name"]
+    target = target_dir / safe_name
 
+    # I1 (containment check): guard against symlink / absolute-path bypass.
+    if not str(target.resolve()).startswith(str(target_dir.resolve()) + os.sep):
+        raise DriveError(f"unsafe filename: {raw_name!r}")
+
+    # I3: stream directly to disk — avoid buffering the full file in RAM.
     request = service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while not done:
-        _status, done = downloader.next_chunk()
-    target.write_bytes(fh.getvalue())
+    with target.open("wb") as fh:
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _status, done = downloader.next_chunk()
     return target
 
 
@@ -98,7 +116,10 @@ def upload_file(
         resp = service.files().create(body=body, media_body=media, fields="id").execute()
     except Exception as exc:  # noqa: BLE001
         raise DriveError(f"upload failed: {exc}") from exc
-    return resp["id"]
+    try:
+        return resp["id"]
+    except KeyError as exc:
+        raise DriveError(f"malformed upload response: {resp!r}") from exc
 
 
 def update_file(service: Any, *, file_id: str, local_path: Path) -> None:
