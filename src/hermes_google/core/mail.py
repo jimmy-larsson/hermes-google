@@ -11,6 +11,7 @@ import os.path
 from dataclasses import dataclass
 from email import message_from_bytes
 from email.message import EmailMessage
+from email.mime.text import MIMEText
 from email.policy import default as default_policy
 from pathlib import Path
 from typing import Any
@@ -164,3 +165,62 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
         in_reply_to=original.in_reply_to,
         attachment_paths=attachments,
     )
+
+
+def _build_raw(to: str, subject: str, body: str) -> str:
+    msg = MIMEText(body, _charset="utf-8")
+    msg["To"] = to
+    msg["Subject"] = subject
+    return base64.urlsafe_b64encode(msg.as_bytes()).decode()
+
+
+def send_draft(
+    service: Any,
+    *,
+    user_email: str,
+    to: str,
+    subject: str,
+    body: str,
+    in_reply_to: str | None = None,
+) -> str:
+    if to.strip().lower() != user_email.strip().lower():
+        raise MailError(
+            f"send_draft: only allowed destination is {user_email}; got {to}"
+        )
+    raw = _build_raw(to, subject, body)
+    if in_reply_to:
+        # Re-encode with the header added
+        msg = MIMEText(body, _charset="utf-8")
+        msg["To"] = to
+        msg["Subject"] = subject
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"] = in_reply_to
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    try:
+        resp = (
+            service.users()
+            .messages()
+            .send(userId="me", body={"raw": raw})
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise MailError(f"failed to send: {exc}") from exc
+    return resp["id"]
+
+
+def mark_read(service: Any, *, message_id: str) -> None:
+    try:
+        service.users().messages().modify(
+            userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}
+        ).execute()
+    except Exception as exc:  # noqa: BLE001
+        raise MailError(f"failed to mark read: {exc}") from exc
+
+
+def archive(service: Any, *, message_id: str) -> None:
+    try:
+        service.users().messages().modify(
+            userId="me", id=message_id, body={"removeLabelIds": ["INBOX"]}
+        ).execute()
+    except Exception as exc:  # noqa: BLE001
+        raise MailError(f"failed to archive: {exc}") from exc

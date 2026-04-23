@@ -170,3 +170,63 @@ def test_get_message_attachment_path_traversal_rejected(
         assert str(ap).startswith(str(tmp_path / "atk1")), (
             f"Attachment path {ap} is outside the expected cache_dir/message_id directory"
         )
+
+
+def test_send_draft_to_user_email_succeeds(mock_gmail_service: MagicMock) -> None:
+    from hermes_google.core.mail import send_draft
+
+    send_call = MagicMock()
+    send_call.execute.return_value = {"id": "sent-1"}
+    mock_gmail_service.users().messages().send.return_value = send_call
+
+    result = send_draft(
+        mock_gmail_service,
+        user_email="jimmy@example.com",
+        to="jimmy@example.com",
+        subject="Draft: Re: invoice",
+        body="Here's your draft.",
+    )
+    assert result == "sent-1"
+    _, kwargs = mock_gmail_service.users().messages().send.call_args
+    assert kwargs["userId"] == "me"
+    assert "raw" in kwargs["body"]
+
+
+def test_send_draft_rejects_other_recipients(mock_gmail_service: MagicMock) -> None:
+    from hermes_google.core.mail import send_draft
+
+    with pytest.raises(MailError, match="only allowed destination"):
+        send_draft(
+            mock_gmail_service,
+            user_email="jimmy@example.com",
+            to="someone-else@example.com",
+            subject="x",
+            body="y",
+        )
+    mock_gmail_service.users().messages().send.assert_not_called()
+
+
+def test_mark_read_removes_unread_label(mock_gmail_service: MagicMock) -> None:
+    from hermes_google.core.mail import mark_read
+
+    modify_call = MagicMock()
+    modify_call.execute.return_value = {}
+    mock_gmail_service.users().messages().modify.return_value = modify_call
+
+    mark_read(mock_gmail_service, message_id="m1")
+    _, kwargs = mock_gmail_service.users().messages().modify.call_args
+    assert kwargs["id"] == "m1"
+    assert kwargs["body"] == {"removeLabelIds": ["UNREAD"]}
+
+
+def test_archive_removes_inbox_label(mock_gmail_service: MagicMock) -> None:
+    from hermes_google.core.mail import archive
+
+    modify_call = MagicMock()
+    modify_call.execute.return_value = {}
+    mock_gmail_service.users().messages().modify.return_value = modify_call
+
+    archive(mock_gmail_service, message_id="m1")
+    _, kwargs = mock_gmail_service.users().messages().modify.call_args
+    assert kwargs["id"] == "m1"
+    assert kwargs["body"] == {"removeLabelIds": ["INBOX"]}
