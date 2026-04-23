@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 class ConfigError(Exception):
-    """Raised when the config file is missing required fields."""
+    """Raised for any config loading failure: file not found, invalid TOML, or missing required fields."""  # noqa: E501
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,10 @@ def load_config(path: Path | None = None) -> Config:
     if not path.exists():
         raise ConfigError(f"config file not found: {path}")
     with path.open("rb") as fh:
-        data = tomllib.load(fh)
+        try:
+            data = tomllib.load(fh)
+        except tomllib.TOMLDecodeError as exc:
+            raise ConfigError(f"config file is not valid TOML: {path}") from exc
 
     return Config(
         user_email=_required(data, "user", "email"),

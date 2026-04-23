@@ -88,6 +88,7 @@ def test_load_config_expands_tilde(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     cfg = load_config(path)
     assert cfg.credentials_path == tmp_path / "credentials.json"
     assert cfg.cache_dir == tmp_path / "cache"
+    assert cfg.log_path == tmp_path / "cache" / "log.jsonl"
 
 
 def test_load_config_missing_required_section(tmp_path: Path) -> None:
@@ -96,8 +97,20 @@ def test_load_config_missing_required_section(tmp_path: Path) -> None:
         load_config(path)
 
 
-def test_default_config_path_uses_xdg_config_home(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_config_path_is_under_home(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", "/home/testuser")
     assert config_module.default_config_path() == Path(
         "/home/testuser/.config/hermes-google/config.toml"
     )
+
+
+def test_load_config_missing_file(tmp_path: Path) -> None:
+    with pytest.raises(config_module.ConfigError, match="not found"):
+        load_config(tmp_path / "nonexistent.toml")
+
+
+def test_load_config_invalid_toml_raises_config_error(tmp_path: Path) -> None:
+    path = tmp_path / "bad.toml"
+    path.write_text("this is = not valid = toml =")
+    with pytest.raises(config_module.ConfigError, match="not valid TOML"):
+        load_config(path)
