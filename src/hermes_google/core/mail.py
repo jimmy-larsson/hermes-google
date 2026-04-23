@@ -6,6 +6,8 @@ easy to unit-test with MagicMock services.
 from __future__ import annotations
 
 import base64
+import binascii
+import os.path
 from dataclasses import dataclass
 from email import message_from_bytes
 from email.message import EmailMessage
@@ -60,6 +62,19 @@ def _to_pending(meta: dict[str, Any]) -> PendingMessage:
     )
 
 
+def _unique_path(base: Path, filename: str) -> Path:
+    candidate = base / filename
+    if not candidate.exists():
+        return candidate
+    stem = candidate.stem
+    suffix = candidate.suffix
+    for i in range(1, 1000):
+        alt = base / f"{stem}-{i}{suffix}"
+        if not alt.exists():
+            return alt
+    raise MailError(f"too many filename collisions for {filename}")
+
+
 def _list_and_hydrate(
     service: Any, *, query: str | None, limit: int, label_ids: list[str] | None = None
 ) -> list[PendingMessage]:
@@ -76,9 +91,12 @@ def _list_and_hydrate(
     ids = [m["id"] for m in resp.get("messages", [])]
     out: list[PendingMessage] = []
     for mid in ids:
-        meta = (
-            service.users().messages().get(userId="me", id=mid, format="metadata").execute()
-        )
+        try:
+            meta = (
+                service.users().messages().get(userId="me", id=mid, format="metadata").execute()
+            )
+        except Exception:  # noqa: BLE001
+            continue  # skip messages that disappeared between list and hydrate
         out.append(_to_pending(meta))
     return out
 
@@ -92,21 +110,26 @@ def search(service: Any, *, query: str, limit: int = 20) -> list[PendingMessage]
 
 
 def _walk_attachments(
-    service: Any, message_id: str, parsed: EmailMessage, cache_dir: Path
+    message_id: str, parsed: EmailMessage, cache_dir: Path
 ) -> list[Path]:
     paths: list[Path] = []
     if not parsed.is_multipart():
         return paths
     target_dir = cache_dir / message_id
-    target_dir.mkdir(parents=True, exist_ok=True)
     for part in parsed.walk():
         filename = part.get_filename()
         if not filename:
             continue
+        safe_name = os.path.basename(filename)
+        if not safe_name or safe_name in {".", ".."} or "/" in safe_name or "\\" in safe_name:
+            continue  # skip suspicious/unsafe filenames
         payload = part.get_payload(decode=True)
         if payload is None:
             continue
-        out = target_dir / filename
+        target_dir.mkdir(parents=True, exist_ok=True)  # lazy — only on first real attachment
+        out = _unique_path(target_dir, safe_name)
+        if not str(out.resolve()).startswith(str(target_dir.resolve()) + os.sep):
+            continue
         out.write_bytes(payload)
         paths.append(out)
     return paths
@@ -123,10 +146,15 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
     except Exception as exc:  # noqa: BLE001
         raise MailError(f"failed to fetch message {message_id}: {exc}") from exc
 
-    raw_bytes = base64.urlsafe_b64decode(resp["raw"])
-    parsed: EmailMessage = message_from_bytes(raw_bytes, policy=default_policy)  # type: ignore[assignment]
+    try:
+        raw_field = resp["raw"]
+        raw_bytes = base64.urlsafe_b64decode(raw_field)
+        parsed: EmailMessage = message_from_bytes(raw_bytes, policy=default_policy)  # type: ignore[assignment]
+    except (KeyError, binascii.Error, ValueError) as exc:
+        raise MailError(f"malformed response for message {message_id}: {exc}") from exc
+
     original = unwrap(parsed)
-    attachments = _walk_attachments(service, message_id, parsed, cache_dir)
+    attachments = _walk_attachments(message_id, parsed, cache_dir)
     return MessageDetail(
         id=resp["id"],
         thread_id=resp.get("threadId", ""),

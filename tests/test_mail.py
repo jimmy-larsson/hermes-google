@@ -1,6 +1,8 @@
 """Tests for mail.py — Gmail core operations."""
 from __future__ import annotations
 
+import base64
+from email.message import EmailMessage
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -59,9 +61,9 @@ def test_list_pending_returns_unread_inbox(mock_gmail_service: MagicMock) -> Non
     assert result[0].id == "m1"
     assert result[0].sender == "sender-m1@x"
     assert result[0].subject == "subj m1"
-    # Query should include label:UNREAD in INBOX
+    # Query must be exactly this string
     _, kwargs = mock_gmail_service.users().messages().list.call_args
-    assert "is:unread" in kwargs["q"] or "UNREAD" in (kwargs.get("labelIds") or [])
+    assert kwargs["q"] == "is:unread in:inbox"
     assert kwargs["userId"] == "me"
 
 
@@ -104,7 +106,6 @@ def test_get_message_unwraps_forward_and_downloads_attachments(
     tmp_path: Path, mock_gmail_service: MagicMock
 ) -> None:
     # Raw message is a base64url-encoded .eml bytes; we fake the raw-format response.
-    import base64
     raw_eml = (Path(__file__).parent / "fixtures" / "fwd_plain_gmail_web.eml").read_bytes()
     raw_b64 = base64.urlsafe_b64encode(raw_eml).decode()
 
@@ -131,3 +132,41 @@ def test_get_message_not_found_raises(mock_gmail_service: MagicMock, tmp_path: P
 
     with pytest.raises(MailError):
         get_message(mock_gmail_service, message_id="nope", cache_dir=tmp_path)
+
+
+def test_get_message_attachment_path_traversal_rejected(
+    tmp_path: Path, mock_gmail_service: MagicMock
+) -> None:
+    """Traversal filename like '../../etc/passwd' must not escape cache_dir/<message_id>/."""
+    # Build a minimal multipart message with a traversal-attempt filename
+    msg = EmailMessage()
+    msg["From"] = "attacker@evil.example"
+    msg["To"] = "victim@example.com"
+    msg["Subject"] = "Totally legit"
+    msg["Message-ID"] = "<atk001@evil.example>"
+    msg.set_content("See attachment.")
+    msg.add_attachment(
+        b"evil content",
+        maintype="application",
+        subtype="octet-stream",
+        filename="../../etc/passwd",
+    )
+
+    raw_bytes = msg.as_bytes()
+    raw_b64 = base64.urlsafe_b64encode(raw_bytes).decode()
+
+    get_call = MagicMock()
+    get_call.execute.return_value = {"id": "atk1", "threadId": "t", "raw": raw_b64}
+    mock_gmail_service.users().messages().get.return_value = get_call
+
+    detail = get_message(mock_gmail_service, message_id="atk1", cache_dir=tmp_path)
+
+    # The file must NOT exist outside cache_dir/atk1/
+    escaped_path = tmp_path.parent / "etc" / "passwd"
+    assert not escaped_path.exists(), "Path traversal succeeded — file written outside cache_dir"
+
+    # Either the attachment was rejected entirely or it was written safely inside cache_dir/atk1/
+    for ap in detail.attachment_paths:
+        assert str(ap).startswith(str(tmp_path / "atk1")), (
+            f"Attachment path {ap} is outside the expected cache_dir/message_id directory"
+        )
