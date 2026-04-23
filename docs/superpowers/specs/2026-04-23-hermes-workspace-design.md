@@ -12,7 +12,9 @@
 
 Access is brokered through a **dedicated Hermes Google account** per user. The user forwards emails they want help with (via a Gmail label rule or manual forward) to Hermes's account; Hermes reads that queue at session start and on demand, drafts replies, and returns them to the user via email. Calendar and Drive are accessed through Google's native sharing — the user shares their calendar and specific Drive files/folders with Hermes's account.
 
-The package is consumed as a **local MCP server** loaded by Claude Code. It is ambient in every session (used at `/start` for the email + calendar briefing and available for spontaneous mid-session requests) and follows the same always-loaded pattern as Mimir. Core logic lives in pure Python modules so the same functions are reachable via an `argparse` CLI for debugging, and so future refactors (e.g., multi-transport, daemon mode) don't force rewrites.
+The package is consumed as a **local MCP server** loaded by Claude Code. Tools are ambient throughout every session (available for any skill, slash command, or user request that needs them) and follow the same always-loaded pattern as Mimir. Core logic lives in pure Python modules so the same functions are reachable via an `argparse` CLI for debugging, and so future refactors (e.g., multi-transport, daemon mode) don't force rewrites.
+
+How callers (like Hermes's `/start` briefing or custom skills) actually invoke these tools is out of scope for this spec — it's the caller's concern. This spec defines the tool surface and guarantees; consumers layer their own UX on top.
 
 The design prioritizes **clarity of privacy boundary** — Hermes only sees what the user has explicitly forwarded or shared, and every access path is revocable in one click without touching code.
 
@@ -22,7 +24,7 @@ The design prioritizes **clarity of privacy boundary** — Hermes only sees what
 - **Occasional inbox triage** — on-demand summarization of a batch of forwarded threads.
 - **Scheduling** — read the user's calendar, propose open slots, create/update/delete events on the user's calendar after confirmation.
 - **Document management** — read, upload, move, and (confirmed) delete files Hermes has access to via Drive sharing.
-- **Ambient availability** — email + calendar checks are woven into `/start`, and Hermes can fulfill mid-session requests (drafting, scheduling, filing) naturally without ceremony.
+- **Ambient availability** — tools are always-loaded so any caller (slash commands, skills, ad-hoc requests) can invoke them without indirection.
 - **Revocable privacy boundary** — every integration point (forward filter, calendar share, Drive share, OAuth grant) can be removed without touching code or configs.
 - **Consistent with existing Hermes architecture** — follows the same MCP-ambient pattern as Mimir rather than introducing a new integration idiom.
 
@@ -80,21 +82,13 @@ This keeps the auth story simple and avoids convention-based isolation (where cr
 
 Hermes has no path to the user's personal Gmail. It has permissioned paths to the user's Calendar and selected Drive items.
 
-**Why MCP, not skill + CLI:** the MCP server is loaded in every session (~400–700 tokens of instructions always-on). For this use pattern — `/start` checks email + calendar every session, mid-session requests are spontaneous and frequent — that cost is paid, not wasted, and MCP matches the existing Mimir pattern. A skill indirection would add latency and drift for tools called this often.
+**Why MCP, not skill + CLI:** the MCP server is loaded in every session (~400–700 tokens of instructions always-on). For tools that will be invoked frequently and from multiple callers (slash commands, skills, ad-hoc user requests), that cost is paid, not wasted, and MCP matches the existing Mimir pattern. A skill indirection would add latency and drift for tools called this often.
 
 ## 6. Data flows
 
-### 6.0 `/start` briefing integration
+Flows describe how the MCP tools are used in practice. They assume a generic caller (slash command, skill, or direct user request) invoking the tools; this spec does not define which caller or what UX wrapper lives around them.
 
-1. The existing `/start` Hermes command runs as usual (Mimir boot, project recap, priorities).
-2. `/start` now also calls `mail_list_pending` and `cal_list_events(start=today, end=today+7d, calendar="user")`.
-3. The briefing adds two new sections:
-   - **EMAIL** — count of pending items in Hermes's queue, plus top 3 by sender/subject/one-line summary. Hermes does not auto-draft; it just reports.
-   - **CALENDAR** — upcoming events this week across the user's calendar and Hermes's own shared calendar, ordered chronologically.
-4. Hermes closes with "What's the focus today?" as before.
-5. If MCP calls fail (auth error, network), `/start` reports the failure in-line and continues with the rest of the briefing. No hard dependency.
-
-### 6.1 Flow A — Draft a reply (user-initiated mid-session)
+### 6.1 Flow A — Draft a reply
 
 1. User applies the `hermes-review` label to a thread in their Gmail (manually, or via a sub-filter like `from:accountant@... → label:hermes-review`). Alternatively, user forwards a one-off message directly to Hermes's address.
 2. A Gmail filter in the user's account (`label:hermes-review → forward to hermes@...`) delivers the thread to Hermes's inbox.
@@ -117,7 +111,7 @@ Hermes has no path to the user's personal Gmail. It has permissioned paths to th
 ### 6.2 Flow B — Triage a batch
 
 1. User forwards a batch (or labels several threads `hermes-review`).
-2. User says "triage what's in the queue" or `/start` reports N pending items and the user responds "give me a full triage."
+2. User asks for triage ("triage what's in the queue", "summarize the pending emails").
 3. Hermes calls `mail_list_pending`, then `mail_get(id)` for each.
 4. Hermes produces a ranked summary (sender, subject, urgency, one-line action) in chat.
 5. Optionally, Hermes sends a single digest email back to the user via `mail_send_draft`.
@@ -125,10 +119,10 @@ Hermes has no path to the user's personal Gmail. It has permissioned paths to th
 
 ### 6.3 Flow C — Calendar operations
 
-**Read (ambient + on-demand):**
+**Read:**
 
-1. `/start` calls `cal_list_events(start=today, end=today+7d)` as part of the briefing.
-2. Mid-session: user says "what's on my calendar Thursday?" → Hermes calls `cal_list_events(start=Thursday, end=Friday)`.
+1. User or caller requests events for a time range ("what's on my calendar Thursday?", "show this week's events").
+2. Hermes calls `cal_list_events(start=..., end=...)` with the computed range.
 3. Hermes answers in chat.
 
 **Create:**
@@ -441,10 +435,8 @@ Attachments contribute to Claude's context. The instructions block reminds Herme
   4. Register MCP server with Claude Code: `claude mcp add hermes-workspace -- python -m hermes_workspace.mcp_server`
   5. Print the Gmail filter rules the user needs to create manually (with the Hermes account address filled in)
   6. Print the calendar/Drive sharing steps with direct links
-- After setup, the user restarts their Hermes session to pick up the new MCP tools. Subsequent `/start` briefings include EMAIL and CALENDAR sections.
+- After setup, the user restarts their Hermes session to pick up the new MCP tools. The tools are then available to any caller (skills, slash commands, ad-hoc requests).
 - No Docker compose stack needed — the MCP server runs as a stdio subprocess of Claude Code.
-
-**`/start` skill update:** the existing `/start` command in Hermes needs a small update to call `mail_list_pending` and `cal_list_events` and render EMAIL + CALENDAR sections in the briefing. This is a change to the Hermes-template repo, not to `hermes-workspace` itself. The spec calls out the change so the plan can include it as a known dependency.
 
 ## 16. Out of scope (future work)
 
@@ -474,4 +466,3 @@ Architectural choices resolved during brainstorming:
 1. **Drive scope selection.** `drive.file` alone likely cannot see files shared *to* Hermes's account — only files the app opened or created. Plan must verify current Google behavior and select between `drive.readonly + drive.file` (stacked, narrower writes) and `drive` (full, simpler). See §8.2.
 2. **Forwarded-email unwrapping robustness.** Gmail has at least two distinct forward formats, plus manual forwards vary by client. Plan should enumerate the formats to support and write `test_forward.py` cases for each before implementation.
 3. **Return-address threading.** When Hermes sends a draft back to the user, should it include the original `Message-ID` in `In-Reply-To` so the user's client groups Hermes's draft-delivery emails near the original thread? Or keep them separate (current spec's default) so the `hermes`-labeled drafts form their own review queue? Likely a matter of taste — decide during plan, easy to change later.
-4. **Hermes-template `/start` integration.** The `/start` skill update (§15) is a cross-repo dependency — the plan should coordinate with the hermes-template changes and document the minimum required Mimir/MCP-check order so the briefing renders cleanly.
