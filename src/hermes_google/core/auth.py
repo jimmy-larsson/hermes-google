@@ -37,8 +37,11 @@ class Services:
 
 def save_credentials(creds: Credentials, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(creds.to_json())
-    os.chmod(path, 0o600)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(creds.to_json())
+    os.replace(tmp, path)
 
 
 def load_credentials(path: Path) -> Credentials:
@@ -68,6 +71,8 @@ def run_install_flow(client_secret_path: Path, credentials_path: Path) -> Creden
 
 
 def revoke_credentials(path: Path) -> None:
+    # TODO: also POST to https://oauth2.googleapis.com/revoke per spec §8.3
+    #   — deferred to CLI (Task 13).
     if path.exists():
         path.unlink()
 

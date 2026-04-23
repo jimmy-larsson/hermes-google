@@ -40,6 +40,7 @@ class _FakeCreds:
 
     def refresh(self, _request) -> None:
         self.token = self.token + "-refreshed"
+        self._json["token"] = self.token
         self.expired = False
         self.valid = True
 
@@ -81,6 +82,8 @@ def test_load_credentials_refreshes_when_expired(
     creds = load_credentials(path)
     assert creds.valid is True
     assert "refreshed" in creds.token
+    # Verify the refreshed token was persisted to disk, not just returned in memory
+    assert "refreshed" in json.loads(path.read_text())["token"]
 
 
 def test_build_services_returns_three_services(mocker: pytest_mock.MockerFixture) -> None:
