@@ -101,12 +101,21 @@ def create_event(
         resp = service.events().insert(calendarId=calendar_id, body=body).execute()
     except Exception as exc:  # noqa: BLE001
         raise CalendarError(f"failed to create event: {exc}") from exc
-    return resp["id"]
+    try:
+        return resp["id"]
+    except KeyError as exc:
+        raise CalendarError(f"malformed create response: {resp!r}") from exc
 
 
 def update_event(
     service: Any, *, calendar_id: str, event_id: str, fields: dict[str, Any]
 ) -> None:
+    """Patch arbitrary event fields.
+
+    The caller (MCP tool layer) is responsible for restricting `fields` to
+    user-intended keys. Core does not filter — Task 10's cal_update_event
+    wrapper performs the confirmation gate per spec §9.
+    """
     try:
         service.events().patch(
             calendarId=calendar_id, eventId=event_id, body=fields
