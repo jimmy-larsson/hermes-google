@@ -1,6 +1,7 @@
 """Tests for forward.py — forwarded-email unwrapping."""
 from __future__ import annotations
 
+import dataclasses
 from email import message_from_bytes
 from email.message import EmailMessage
 from email.policy import default as default_policy
@@ -18,12 +19,14 @@ def _load(fixtures_dir: Path, name: str) -> EmailMessage:
 
 def test_unwrap_gmail_web_plain(fixtures_dir: Path) -> None:
     msg = _load(fixtures_dir, "fwd_plain_gmail_web.eml")
+    msg["In-Reply-To"] = "<thread@example.com>"
     original = unwrap(msg)
     assert isinstance(original, OriginalMessage)
     assert original.sender == "Acme Billing <billing@acme.example>"
     assert original.subject == "Q1 invoice from Acme"
     assert "Please find attached your Q1 invoice" in original.body
     assert "Forwarded message" not in original.body
+    assert original.in_reply_to == "<thread@example.com>"
 
 
 def test_unwrap_gmail_mobile_plain(fixtures_dir: Path) -> None:
@@ -50,15 +53,17 @@ def test_unwrap_non_forwarded_returns_message_as_is() -> None:
     msg["From"] = "direct@example.com"
     msg["Subject"] = "Not a forward"
     msg["Message-ID"] = "<direct-1@example.com>"
+    msg["In-Reply-To"] = "<prev@example.com>"
     msg.set_content("Just a regular message.")
 
     original = unwrap(msg)
     assert original.sender == "direct@example.com"
     assert original.subject == "Not a forward"
     assert "Just a regular message" in original.body
+    assert original.in_reply_to == "<prev@example.com>"
 
 
 def test_original_message_fields_are_immutable() -> None:
     msg = OriginalMessage(sender="a", subject="b", body="c", in_reply_to=None)
-    with pytest.raises((AttributeError, Exception)):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         msg.sender = "x"  # type: ignore[misc]

@@ -89,6 +89,8 @@ def unwrap(msg: EmailMessage) -> OriginalMessage:
             in_reply_to=msg.get("In-Reply-To"),
         )
 
+    # The forwarder's preamble (e.g. "Can you help with this?") is intentionally
+    # dropped — callers only need the original message content.
     _wrap_note, after = split
     headers, inner_body = _parse_inner_headers(after)
     return OriginalMessage(
