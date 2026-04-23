@@ -193,3 +193,51 @@ def test_cal_create_event_tool(mocker) -> None:
         end="2026-04-24T11:00:00+09:00",
     )
     assert result == {"id": "new-1"}
+
+
+def test_drive_search_tool(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drive import FileRef
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    mocker.patch.object(
+        mcp_server.drive_core,
+        "search",
+        return_value=[FileRef(id="f1", name="n", mime_type="text/plain")],
+    )
+    result = mcp_server.drive_search(query="q")
+    assert result[0]["id"] == "f1"
+
+
+def test_drive_get_tool_returns_path(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    cfg = MagicMock(cache_dir=tmp_path)
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    mocker.patch.object(
+        mcp_server.drive_core,
+        "get_file",
+        return_value=tmp_path / "drive" / "f1" / "x.pdf",
+    )
+    result = mcp_server.drive_get(file_id="f1")
+    assert result["path"].endswith("x.pdf")
+
+
+def test_drive_upload_uses_default_parent(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+
+    local = tmp_path / "x.md"
+    local.write_text("hi")
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    cfg = MagicMock(drive_default_parent_folder_id="DEFAULT")
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    spy = mocker.patch.object(mcp_server.drive_core, "upload_file", return_value="new-1")
+
+    result = mcp_server.drive_upload(local_path=str(local), name="x.md")
+    assert result == {"id": "new-1"}
+    _, kwargs = spy.call_args
+    assert kwargs["parent_folder_id"] == "DEFAULT"

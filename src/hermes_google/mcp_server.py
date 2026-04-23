@@ -8,12 +8,14 @@ Tool functions are thin wrappers around `hermes_google.core.*` that:
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 
 from hermes_google.core import auth as auth_core
 from hermes_google.core import cal as cal_core
+from hermes_google.core import drive as drive_core
 from hermes_google.core import mail as mail_core
 from hermes_google.core.auth import AuthError, Services
 from hermes_google.core.config import Config, ConfigError, load_config
@@ -255,6 +257,84 @@ def cal_delete_event(calendar: str, event_id: str) -> dict[str, Any]:
     cid = _resolve_cal(calendar)
     cal_core.delete_event(services.calendar, calendar_id=cid, event_id=event_id)
     return {"id": event_id}
+
+
+@mcp.tool
+def drive_search(
+    query: str, mime_type: str | None = None, limit: int = 20
+) -> list[dict[str, Any]]:
+    """Search Drive files visible to Hermes (by name, optionally mime type). Max 100 per call."""
+    services = _get_services()
+    return [
+        asdict(f)
+        for f in drive_core.search(
+            services.drive, query=query, mime_type=mime_type, limit=_clamp_limit(limit)
+        )
+    ]
+
+
+@mcp.tool
+def drive_list(folder_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    """List children of a Drive folder. Max 100 per call."""
+    services = _get_services()
+    return [
+        asdict(f)
+        for f in drive_core.list_folder(
+            services.drive, folder_id=folder_id, limit=_clamp_limit(limit)
+        )
+    ]
+
+
+@mcp.tool
+def drive_get(file_id: str) -> dict[str, Any]:
+    """Download a file to ~/.cache/hermes-google/drive/<file_id>/. Returns the local path."""
+    services = _get_services()
+    cfg = _get_config()
+    path = drive_core.get_file(services.drive, file_id=file_id, cache_dir=cfg.cache_dir)
+    return {"path": str(path)}
+
+
+@mcp.tool
+def drive_upload(
+    local_path: str, name: str, folder_id: str | None = None
+) -> dict[str, Any]:
+    """Upload a local file to Drive. Confirm with user before calling."""
+    services = _get_services()
+    cfg = _get_config()
+    parent = folder_id or cfg.drive_default_parent_folder_id
+    file_id = drive_core.upload_file(
+        services.drive,
+        local_path=Path(local_path),
+        name=name,
+        parent_folder_id=parent,
+    )
+    return {"id": file_id}
+
+
+@mcp.tool
+def drive_update(file_id: str, local_path: str) -> dict[str, Any]:
+    """Replace a Drive file's contents with a local file. Confirm with user before calling."""
+    services = _get_services()
+    drive_core.update_file(services.drive, file_id=file_id, local_path=Path(local_path))
+    return {"id": file_id}
+
+
+@mcp.tool
+def drive_move(file_id: str, parent_folder_id: str) -> dict[str, Any]:
+    """Move a Drive file into a different parent folder. Confirm with user before calling."""
+    services = _get_services()
+    drive_core.move_file(
+        services.drive, file_id=file_id, parent_folder_id=parent_folder_id
+    )
+    return {"id": file_id}
+
+
+@mcp.tool
+def drive_delete(file_id: str) -> dict[str, Any]:
+    """Delete a Drive file. Requires user to have used an explicit 'delete' verb."""
+    services = _get_services()
+    drive_core.delete_file(services.drive, file_id=file_id)
+    return {"id": file_id}
 
 
 def main() -> None:
