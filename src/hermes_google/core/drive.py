@@ -36,9 +36,11 @@ def search(
     mime_type: str | None = None,
     limit: int = 20,
 ) -> list[FileRef]:
-    q_parts = [f"name contains '{query}'", "trashed = false"]
+    safe_query = query.replace("'", "\\'")
+    q_parts = [f"name contains '{safe_query}'", "trashed = false"]
     if mime_type:
-        q_parts.append(f"mimeType = '{mime_type}'")
+        safe_mime_type = mime_type.replace("'", "\\'")
+        q_parts.append(f"mimeType = '{safe_mime_type}'")
     try:
         resp = (
             service.files()

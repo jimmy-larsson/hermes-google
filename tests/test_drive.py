@@ -175,3 +175,14 @@ def test_upload_file_malformed_response_raises(
 
     with pytest.raises(DriveError, match="malformed upload response"):
         upload_file(mock_drive_service, local_path=local, name="notes.md")
+
+
+def test_search_escapes_single_quotes(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = _list_response([])
+    mock_drive_service.files().list.return_value = call
+
+    search(mock_drive_service, query="O'Brien")
+    _, kwargs = mock_drive_service.files().list.call_args
+    assert "\\'" in kwargs["q"]
+    assert "O\\'Brien" in kwargs["q"]
