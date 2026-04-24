@@ -7,6 +7,7 @@ Supports three formats:
 
 Non-forwarded messages pass through unchanged.
 """
+
 from __future__ import annotations
 
 import re

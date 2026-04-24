@@ -1,4 +1,5 @@
 """Calendar operations. Every function takes a `service` argument."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,9 +26,7 @@ class EventSummary:
     attendees: list[str]
 
 
-def resolve_calendar_id(
-    alias: str, *, user_calendar_id: str | None = None
-) -> str:
+def resolve_calendar_id(alias: str, *, user_calendar_id: str | None = None) -> str:
     if alias == "hermes":
         return "primary"
     if alias == "user":
@@ -107,9 +106,7 @@ def create_event(
         raise CalendarError(f"malformed create response: {resp!r}") from exc
 
 
-def update_event(
-    service: Any, *, calendar_id: str, event_id: str, fields: dict[str, Any]
-) -> None:
+def update_event(service: Any, *, calendar_id: str, event_id: str, fields: dict[str, Any]) -> None:
     """Patch arbitrary event fields.
 
     The caller (MCP tool layer) is responsible for restricting `fields` to
@@ -117,9 +114,7 @@ def update_event(
     performs the confirmation gate before invoking this function.
     """
     try:
-        service.events().patch(
-            calendarId=calendar_id, eventId=event_id, body=fields
-        ).execute()
+        service.events().patch(calendarId=calendar_id, eventId=event_id, body=fields).execute()
     except Exception as exc:  # noqa: BLE001
         raise CalendarError(f"failed to update event: {exc}") from exc
 

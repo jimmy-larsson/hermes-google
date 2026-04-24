@@ -1,4 +1,5 @@
 """Tests for config.py — TOML loader."""
+
 from __future__ import annotations
 
 from pathlib import Path

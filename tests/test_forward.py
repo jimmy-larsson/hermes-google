@@ -1,4 +1,5 @@
 """Tests for forward.py — forwarded-email unwrapping."""
+
 from __future__ import annotations
 
 import dataclasses

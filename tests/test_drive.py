@@ -1,4 +1,5 @@
 """Tests for drive.py — Drive core operations."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,8 +29,12 @@ def test_search_returns_files(mock_drive_service: MagicMock) -> None:
     call.execute.return_value = _list_response(
         [
             {"id": "f1", "name": "Q1 report.pdf", "mimeType": "application/pdf"},
-            {"id": "f2", "name": "Q1 draft.docx",
-             "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+            {
+                "id": "f2",
+                "name": "Q1 draft.docx",
+                "mimeType": "application/vnd.openxmlformats-officedocument"
+                ".wordprocessingml.document",
+            },
         ]
     )
     mock_drive_service.files().list.return_value = call
@@ -65,12 +70,12 @@ def test_list_folder(mock_drive_service: MagicMock) -> None:
     assert "'FOLDER' in parents" in kwargs["q"]
 
 
-def test_get_file_downloads_to_cache(
-    tmp_path: Path, mock_drive_service: MagicMock, mocker
-) -> None:
+def test_get_file_downloads_to_cache(tmp_path: Path, mock_drive_service: MagicMock, mocker) -> None:
     meta_call = MagicMock()
     meta_call.execute.return_value = {
-        "id": "f1", "name": "report.pdf", "mimeType": "application/pdf"
+        "id": "f1",
+        "name": "report.pdf",
+        "mimeType": "application/pdf",
     }
     mock_drive_service.files().get.return_value = meta_call
     mock_drive_service.files().get_media.return_value = MagicMock()
@@ -81,9 +86,7 @@ def test_get_file_downloads_to_cache(
         instance.next_chunk.side_effect = [(MagicMock(progress=lambda: 1.0), True)]
         return instance
 
-    mocker.patch(
-        "hermes_google.core.drive.MediaIoBaseDownload", side_effect=_fake_downloader
-    )
+    mocker.patch("hermes_google.core.drive.MediaIoBaseDownload", side_effect=_fake_downloader)
 
     path = get_file(mock_drive_service, file_id="f1", cache_dir=tmp_path)
     assert path == tmp_path / "drive" / "f1" / "report.pdf"
@@ -91,9 +94,7 @@ def test_get_file_downloads_to_cache(
     assert path.read_bytes().startswith(b"%PDF")
 
 
-def test_upload_file(
-    tmp_path: Path, mock_drive_service: MagicMock, mocker
-) -> None:
+def test_upload_file(tmp_path: Path, mock_drive_service: MagicMock, mocker) -> None:
     local = tmp_path / "notes.md"
     local.write_text("hello")
 
@@ -154,7 +155,9 @@ def test_get_file_rejects_path_traversal_name(
 ) -> None:
     meta_call = MagicMock()
     meta_call.execute.return_value = {
-        "id": "f1", "name": "../../etc/passwd", "mimeType": "text/plain"
+        "id": "f1",
+        "name": "../../etc/passwd",
+        "mimeType": "text/plain",
     }
     mock_drive_service.files().get.return_value = meta_call
 

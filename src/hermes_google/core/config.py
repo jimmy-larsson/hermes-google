@@ -3,6 +3,7 @@
 Reads `~/.config/hermes-google/config.toml` by default and returns a frozen
 Config dataclass. No Google imports; safe to use in every other module.
 """
+
 from __future__ import annotations
 
 import os

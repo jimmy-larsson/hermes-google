@@ -1,4 +1,5 @@
 """Drive operations. Every function takes a `service` argument."""
+
 from __future__ import annotations
 
 import os
@@ -24,9 +25,7 @@ _FIELDS = "files(id,name,mimeType,parents)"
 
 
 def _to_ref(item: dict[str, Any]) -> FileRef:
-    return FileRef(
-        id=item["id"], name=item.get("name", ""), mime_type=item.get("mimeType", "")
-    )
+    return FileRef(id=item["id"], name=item.get("name", ""), mime_type=item.get("mimeType", ""))
 
 
 def search(
@@ -43,9 +42,7 @@ def search(
         q_parts.append(f"mimeType = '{safe_mime_type}'")
     try:
         resp = (
-            service.files()
-            .list(q=" and ".join(q_parts), fields=_FIELDS, pageSize=limit)
-            .execute()
+            service.files().list(q=" and ".join(q_parts), fields=_FIELDS, pageSize=limit).execute()
         )
     except Exception as exc:  # noqa: BLE001
         raise DriveError(f"search failed: {exc}") from exc
@@ -63,11 +60,7 @@ def list_folder(service: Any, *, folder_id: str, limit: int = 50) -> list[FileRe
 
 def get_file(service: Any, *, file_id: str, cache_dir: Path) -> Path:
     try:
-        meta = (
-            service.files()
-            .get(fileId=file_id, fields="id,name,mimeType")
-            .execute()
-        )
+        meta = service.files().get(fileId=file_id, fields="id,name,mimeType").execute()
     except Exception as exc:  # noqa: BLE001
         raise DriveError(f"get metadata failed: {exc}") from exc
 

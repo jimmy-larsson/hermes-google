@@ -7,6 +7,7 @@ this CLI exists for:
   - auth troubleshooting (`auth status`, `auth revoke`)
   - debug invocations of individual operations (mail/cal/drive subcommands)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -79,9 +80,7 @@ def cmd_mail_list(args: argparse.Namespace) -> int:
 def cmd_mail_get(args: argparse.Namespace) -> int:
     services = _services()
     cfg = _cfg()
-    detail = mail_core.get_message(
-        services.gmail, message_id=args.id, cache_dir=cfg.cache_dir
-    )
+    detail = mail_core.get_message(services.gmail, message_id=args.id, cache_dir=cfg.cache_dir)
     data = asdict(detail)
     data["attachment_paths"] = [str(p) for p in detail.attachment_paths]
     _print_json(data)

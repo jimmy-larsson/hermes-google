@@ -3,6 +3,7 @@
 No config imports here — callers pass paths explicitly so this module stays
 easy to unit-test with MagicMock services.
 """
+
 from __future__ import annotations
 
 import base64
@@ -93,9 +94,7 @@ def _list_and_hydrate(
     out: list[PendingMessage] = []
     for mid in ids:
         try:
-            meta = (
-                service.users().messages().get(userId="me", id=mid, format="metadata").execute()
-            )
+            meta = service.users().messages().get(userId="me", id=mid, format="metadata").execute()
         except Exception:  # noqa: BLE001
             continue  # skip messages that disappeared between list and hydrate
         out.append(_to_pending(meta))
@@ -110,9 +109,7 @@ def search(service: Any, *, query: str, limit: int = 20) -> list[PendingMessage]
     return _list_and_hydrate(service, query=query, limit=limit)
 
 
-def _walk_attachments(
-    message_id: str, parsed: EmailMessage, cache_dir: Path
-) -> list[Path]:
+def _walk_attachments(message_id: str, parsed: EmailMessage, cache_dir: Path) -> list[Path]:
     paths: list[Path] = []
     if not parsed.is_multipart():
         return paths
@@ -138,12 +135,7 @@ def _walk_attachments(
 
 def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDetail:
     try:
-        resp = (
-            service.users()
-            .messages()
-            .get(userId="me", id=message_id, format="raw")
-            .execute()
-        )
+        resp = service.users().messages().get(userId="me", id=message_id, format="raw").execute()
     except Exception as exc:  # noqa: BLE001
         raise MailError(f"failed to fetch message {message_id}: {exc}") from exc
 
@@ -188,17 +180,10 @@ def send_draft(
     in_reply_to: str | None = None,
 ) -> str:
     if to.strip().lower() != user_email.strip().lower():
-        raise MailError(
-            f"send_draft: only allowed destination is {user_email}; got {to}"
-        )
+        raise MailError(f"send_draft: only allowed destination is {user_email}; got {to}")
     try:
         raw = _build_raw(to, subject, body, in_reply_to=in_reply_to)
-        resp = (
-            service.users()
-            .messages()
-            .send(userId="me", body={"raw": raw})
-            .execute()
-        )
+        resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()
     except Exception as exc:  # noqa: BLE001
         raise MailError(f"failed to send: {exc}") from exc
     try:

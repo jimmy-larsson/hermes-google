@@ -1,4 +1,5 @@
 """Tests for mail.py — Gmail core operations."""
+
 from __future__ import annotations
 
 import base64
@@ -86,11 +87,13 @@ def test_search_passes_query_through(mock_gmail_service: MagicMock) -> None:
             "id": id,
             "threadId": "t",
             "snippet": "s",
-            "payload": {"headers": [
-                {"name": "From", "value": "x@y"},
-                {"name": "Subject", "value": "hit"},
-                {"name": "Date", "value": "Thu, 23 Apr 2026 10:00:00 +0900"},
-            ]},
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "x@y"},
+                    {"name": "Subject", "value": "hit"},
+                    {"name": "Date", "value": "Thu, 23 Apr 2026 10:00:00 +0900"},
+                ]
+            },
         }
         return inner
 
@@ -113,9 +116,7 @@ def test_get_message_unwraps_forward_and_downloads_attachments(
     get_call.execute.return_value = {"id": "m1", "threadId": "t", "raw": raw_b64}
     mock_gmail_service.users().messages().get.return_value = get_call
 
-    detail = get_message(
-        mock_gmail_service, message_id="m1", cache_dir=tmp_path
-    )
+    detail = get_message(mock_gmail_service, message_id="m1", cache_dir=tmp_path)
     assert detail.id == "m1"
     assert detail.original_sender == "Acme Billing <billing@acme.example>"
     assert detail.original_subject == "Q1 invoice from Acme"
@@ -254,6 +255,7 @@ def test_send_draft_with_in_reply_to_adds_threading_headers(
     _, kwargs = mock_gmail_service.users().messages().send.call_args
     # Decode the raw body and verify In-Reply-To + References headers are set
     import base64 as _b64
+
     raw = _b64.urlsafe_b64decode(kwargs["body"]["raw"]).decode()
     assert "In-Reply-To: <original@example.com>" in raw
     assert "References: <original@example.com>" in raw

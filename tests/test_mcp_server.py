@@ -1,4 +1,5 @@
 """Tests for mcp_server.py — shape of instructions block, tool registration."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -35,9 +36,7 @@ def test_auth_status_missing_credentials(mocker) -> None:
     from hermes_google import mcp_server
     from hermes_google.core.auth import AuthError
 
-    mocker.patch.object(
-        mcp_server, "_get_credentials", side_effect=AuthError("missing")
-    )
+    mocker.patch.object(mcp_server, "_get_credentials", side_effect=AuthError("missing"))
     result = mcp_server.auth_status()
     assert result["valid"] is False
     assert "missing" in result["error"]
@@ -47,9 +46,7 @@ def test_auth_status_config_error(mocker) -> None:
     from hermes_google import mcp_server
     from hermes_google.core.config import ConfigError
 
-    mocker.patch.object(
-        mcp_server, "_get_credentials", side_effect=ConfigError("bad config")
-    )
+    mocker.patch.object(mcp_server, "_get_credentials", side_effect=ConfigError("bad config"))
     result = mcp_server.auth_status()
     assert result["valid"] is False
     assert "bad config" in result["error"]
@@ -75,15 +72,12 @@ def test_mail_list_pending_tool(mocker) -> None:
         mcp_server.mail_core,
         "list_pending",
         return_value=[
-            PendingMessage(
-                id="m1", thread_id="t", sender="s", subject="x", date="d", snippet="..."
-            )
+            PendingMessage(id="m1", thread_id="t", sender="s", subject="x", date="d", snippet="...")
         ],
     )
     result = mcp_server.mail_list_pending(limit=5)
     assert result == [
-        {"id": "m1", "thread_id": "t", "sender": "s", "subject": "x", "date": "d",
-         "snippet": "..."}
+        {"id": "m1", "thread_id": "t", "sender": "s", "subject": "x", "date": "d", "snippet": "..."}
     ]
 
 
@@ -96,9 +90,7 @@ def test_mail_send_draft_tool_passes_user_email(mocker) -> None:
     mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
     send_spy = mocker.patch.object(mcp_server.mail_core, "send_draft", return_value="sent-1")
 
-    result = mcp_server.mail_send_draft(
-        to="jimmy@example.com", subject="s", body="b"
-    )
+    result = mcp_server.mail_send_draft(to="jimmy@example.com", subject="s", body="b")
     assert result == {"id": "sent-1"}
     _, kwargs = send_spy.call_args
     assert kwargs["user_email"] == "jimmy@example.com"
@@ -169,9 +161,7 @@ def test_cal_list_events_tool(mocker) -> None:
         "list_events",
         return_value=[EventSummary(id="e1", title="Lunch", start="s", end="e", attendees=[])],
     )
-    result = mcp_server.cal_list_events(
-        calendar="user", start="s", end="e"
-    )
+    result = mcp_server.cal_list_events(calendar="user", start="s", end="e")
     assert result[0]["id"] == "e1"
     _, kwargs = mcp_server.cal_core.list_events.call_args
     assert kwargs["calendar_id"] == "jimmy@example.com"

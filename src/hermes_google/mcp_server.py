@@ -5,6 +5,7 @@ Tool functions are thin wrappers around `hermes_google.core.*` that:
 - Enforce the destination-email invariant on `mail_send_draft`.
 - Return JSON-serializable dicts/lists (no dataclass instances).
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -126,8 +127,7 @@ def mail_search(query: str, limit: int = 20) -> list[dict[str, Any]]:
     """Gmail search within Hermes's own inbox. Max 100 per call."""
     services = _get_services()
     return [
-        asdict(m)
-        for m in mail_core.search(services.gmail, query=query, limit=_clamp_limit(limit))
+        asdict(m) for m in mail_core.search(services.gmail, query=query, limit=_clamp_limit(limit))
     ]
 
 
@@ -136,9 +136,7 @@ def mail_get(message_id: str) -> dict[str, Any]:
     """Fetch a message. Returns unwrapped original sender/subject/body + attachment paths."""
     services = _get_services()
     cfg = _get_config()
-    detail = mail_core.get_message(
-        services.gmail, message_id=message_id, cache_dir=cfg.cache_dir
-    )
+    detail = mail_core.get_message(services.gmail, message_id=message_id, cache_dir=cfg.cache_dir)
     data = asdict(detail)
     data["attachment_paths"] = [str(p) for p in detail.attachment_paths]
     return data
@@ -238,15 +236,11 @@ def cal_create_event(
 
 
 @mcp.tool
-def cal_update_event(
-    calendar: str, event_id: str, fields: dict[str, Any]
-) -> dict[str, Any]:
+def cal_update_event(calendar: str, event_id: str, fields: dict[str, Any]) -> dict[str, Any]:
     """Patch an event. Requires user confirmation before calling."""
     services = _get_services()
     cid = _resolve_cal(calendar)
-    cal_core.update_event(
-        services.calendar, calendar_id=cid, event_id=event_id, fields=fields
-    )
+    cal_core.update_event(services.calendar, calendar_id=cid, event_id=event_id, fields=fields)
     return {"id": event_id}
 
 
@@ -260,9 +254,7 @@ def cal_delete_event(calendar: str, event_id: str) -> dict[str, Any]:
 
 
 @mcp.tool
-def drive_search(
-    query: str, mime_type: str | None = None, limit: int = 20
-) -> list[dict[str, Any]]:
+def drive_search(query: str, mime_type: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
     """Search Drive files visible to Hermes (by name, optionally mime type). Max 100 per call."""
     services = _get_services()
     return [
@@ -295,9 +287,7 @@ def drive_get(file_id: str) -> dict[str, Any]:
 
 
 @mcp.tool
-def drive_upload(
-    local_path: str, name: str, folder_id: str | None = None
-) -> dict[str, Any]:
+def drive_upload(local_path: str, name: str, folder_id: str | None = None) -> dict[str, Any]:
     """Upload a local file to Drive. Confirm with user before calling."""
     services = _get_services()
     cfg = _get_config()
@@ -323,9 +313,7 @@ def drive_update(file_id: str, local_path: str) -> dict[str, Any]:
 def drive_move(file_id: str, parent_folder_id: str) -> dict[str, Any]:
     """Move a Drive file into a different parent folder. Confirm with user before calling."""
     services = _get_services()
-    drive_core.move_file(
-        services.drive, file_id=file_id, parent_folder_id=parent_folder_id
-    )
+    drive_core.move_file(services.drive, file_id=file_id, parent_folder_id=parent_folder_id)
     return {"id": file_id}
 
 

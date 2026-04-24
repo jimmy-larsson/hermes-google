@@ -2,6 +2,7 @@
 
 Gmail/Calendar/Drive scopes are hardcoded here (single source of truth).
 """
+
 from __future__ import annotations
 
 import os
@@ -62,9 +63,7 @@ def load_credentials(path: Path) -> Credentials:
 def run_install_flow(client_secret_path: Path, credentials_path: Path) -> Credentials:
     if not client_secret_path.exists():
         raise AuthError(f"client secret not found at {client_secret_path}")
-    flow = InstalledAppFlow.from_client_secrets_file(
-        str(client_secret_path), scopes=list(SCOPES)
-    )
+    flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_path), scopes=list(SCOPES))
     creds = flow.run_local_server(port=0)
     save_credentials(creds, credentials_path)
     return creds

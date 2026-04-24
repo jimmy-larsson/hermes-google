@@ -1,4 +1,5 @@
 """Tests for auth.py — credential read/write + service builders."""
+
 from __future__ import annotations
 
 import json

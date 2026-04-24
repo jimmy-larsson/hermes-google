@@ -1,4 +1,5 @@
 """Tests for cal.py — Calendar core operations."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
