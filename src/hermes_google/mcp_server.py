@@ -56,6 +56,8 @@ POLICIES:
 """.strip()
 
 
+# Lazy singletons — safe under fastmcp stdio transport (single-threaded).
+# NOT thread-safe for HTTP/multi-client mode.
 _config: Config | None = None
 _services: Services | None = None
 
@@ -292,6 +294,7 @@ def drive_upload(local_path: str, name: str, folder_id: str | None = None) -> di
     services = _get_services()
     cfg = _get_config()
     parent = folder_id or cfg.drive_default_parent_folder_id
+    # NOTE: local_path is not restricted to cache_dir — deferred containment guard.
     file_id = drive_core.upload_file(
         services.drive,
         local_path=Path(local_path),
@@ -305,6 +308,7 @@ def drive_upload(local_path: str, name: str, folder_id: str | None = None) -> di
 def drive_update(file_id: str, local_path: str) -> dict[str, Any]:
     """Replace a Drive file's contents with a local file. Confirm with user before calling."""
     services = _get_services()
+    # NOTE: local_path is not restricted to cache_dir — deferred containment guard.
     drive_core.update_file(services.drive, file_id=file_id, local_path=Path(local_path))
     return {"id": file_id}
 

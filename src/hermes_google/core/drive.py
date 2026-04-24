@@ -50,7 +50,8 @@ def search(
 
 
 def list_folder(service: Any, *, folder_id: str, limit: int = 50) -> list[FileRef]:
-    q = f"'{folder_id}' in parents and trashed = false"
+    safe_id = folder_id.replace("'", "\\'")
+    q = f"'{safe_id}' in parents and trashed = false"
     try:
         resp = service.files().list(q=q, fields=_FIELDS, pageSize=limit).execute()
     except Exception as exc:  # noqa: BLE001
