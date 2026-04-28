@@ -61,7 +61,7 @@ def test_save_credentials_writes_with_mode_0600(tmp_path: Path) -> None:
 
 
 def test_load_credentials_missing_raises(tmp_path: Path) -> None:
-    with pytest.raises(AuthError, match="no credentials"):
+    with pytest.raises(AuthError, match="credentials not found"):
         load_credentials(tmp_path / "nope.json")
 
 

@@ -36,7 +36,6 @@ email = "${HERMES_EMAIL}"
 [paths]
 credentials = "${CONFIG_DIR}/credentials.json"
 cache = "${CACHE_DIR}"
-log = "${CACHE_DIR}/log.jsonl"
 
 [mcp]
 name = "hermes-google"

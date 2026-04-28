@@ -9,8 +9,10 @@ from typing import Any
 
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
+from hermes_google.core.errors import ServiceError
 
-class DriveError(Exception):
+
+class DriveError(ServiceError):
     """Raised on Drive API failures."""
 
 
@@ -45,7 +47,7 @@ def search(
             service.files().list(q=" and ".join(q_parts), fields=_FIELDS, pageSize=limit).execute()
         )
     except Exception as exc:  # noqa: BLE001
-        raise DriveError(f"search failed: {exc}") from exc
+        raise DriveError("search failed") from exc
     return [_to_ref(i) for i in resp.get("files", [])]
 
 
@@ -55,7 +57,7 @@ def list_folder(service: Any, *, folder_id: str, limit: int = 50) -> list[FileRe
     try:
         resp = service.files().list(q=q, fields=_FIELDS, pageSize=limit).execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError(f"list folder failed: {exc}") from exc
+        raise DriveError("list folder failed") from exc
     return [_to_ref(i) for i in resp.get("files", [])]
 
 
@@ -63,7 +65,7 @@ def get_file(service: Any, *, file_id: str, cache_dir: Path) -> Path:
     try:
         meta = service.files().get(fileId=file_id, fields="id,name,mimeType").execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError(f"get metadata failed: {exc}") from exc
+        raise DriveError("get metadata failed") from exc
 
     # I1: validate filename before touching the filesystem.
     raw_name = meta["name"]
@@ -111,11 +113,11 @@ def upload_file(
     try:
         resp = service.files().create(body=body, media_body=media, fields="id").execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError(f"upload failed: {exc}") from exc
+        raise DriveError("upload failed") from exc
     try:
         return resp["id"]
     except KeyError as exc:
-        raise DriveError(f"malformed upload response: {resp!r}") from exc
+        raise DriveError("unexpected upload response format") from exc
 
 
 def update_file(service: Any, *, file_id: str, local_path: Path) -> None:
@@ -123,7 +125,7 @@ def update_file(service: Any, *, file_id: str, local_path: Path) -> None:
     try:
         service.files().update(fileId=file_id, media_body=media).execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError(f"update failed: {exc}") from exc
+        raise DriveError("update failed") from exc
 
 
 def move_file(service: Any, *, file_id: str, parent_folder_id: str) -> None:
@@ -137,11 +139,11 @@ def move_file(service: Any, *, file_id: str, parent_folder_id: str) -> None:
             fields="id",
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError(f"move failed: {exc}") from exc
+        raise DriveError("move failed") from exc
 
 
 def delete_file(service: Any, *, file_id: str) -> None:
     try:
         service.files().delete(fileId=file_id).execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError(f"delete failed: {exc}") from exc
+        raise DriveError("delete failed") from exc

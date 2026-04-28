@@ -17,10 +17,11 @@ from email.policy import default as default_policy
 from pathlib import Path
 from typing import Any
 
+from hermes_google.core.errors import ServiceError
 from hermes_google.core.forward import unwrap
 
 
-class MailError(Exception):
+class MailError(ServiceError):
     """Raised on Gmail API failures."""
 
 
@@ -88,7 +89,7 @@ def _list_and_hydrate(
             kwargs["labelIds"] = label_ids
         resp = service.users().messages().list(**kwargs).execute()
     except Exception as exc:  # noqa: BLE001 - Google client raises HttpError; keep broad for tests
-        raise MailError(str(exc)) from exc
+        raise MailError("failed to list messages") from exc
 
     ids = [m["id"] for m in resp.get("messages", [])]
     out: list[PendingMessage] = []
@@ -137,14 +138,14 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
     try:
         resp = service.users().messages().get(userId="me", id=message_id, format="raw").execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError(f"failed to fetch message {message_id}: {exc}") from exc
+        raise MailError(f"failed to fetch message {message_id}") from exc
 
     try:
         raw_field = resp["raw"]
         raw_bytes = base64.urlsafe_b64decode(raw_field)
         parsed: EmailMessage = message_from_bytes(raw_bytes, policy=default_policy)  # type: ignore[assignment]
     except (KeyError, binascii.Error, ValueError) as exc:
-        raise MailError(f"malformed response for message {message_id}: {exc}") from exc
+        raise MailError(f"malformed response for message {message_id}") from exc
 
     original = unwrap(parsed)
     attachments = _walk_attachments(message_id, parsed, cache_dir)
@@ -180,16 +181,16 @@ def send_draft(
     in_reply_to: str | None = None,
 ) -> str:
     if to.strip().lower() != user_email.strip().lower():
-        raise MailError(f"send_draft: only allowed destination is {user_email}; got {to}")
+        raise MailError("send_draft: destination must match the configured user email")
     try:
         raw = _build_raw(to, subject, body, in_reply_to=in_reply_to)
         resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError(f"failed to send: {exc}") from exc
+        raise MailError("failed to send draft") from exc
     try:
         return resp["id"]
     except KeyError as exc:
-        raise MailError(f"malformed send response: {resp!r}") from exc
+        raise MailError("unexpected send response format") from exc
 
 
 def mark_read(service: Any, *, message_id: str) -> None:
@@ -198,7 +199,7 @@ def mark_read(service: Any, *, message_id: str) -> None:
             userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError(f"failed to mark read: {exc}") from exc
+        raise MailError("failed to mark read") from exc
 
 
 def archive(service: Any, *, message_id: str) -> None:
@@ -207,4 +208,4 @@ def archive(service: Any, *, message_id: str) -> None:
             userId="me", id=message_id, body={"removeLabelIds": ["INBOX"]}
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError(f"failed to archive: {exc}") from exc
+        raise MailError("failed to archive") from exc

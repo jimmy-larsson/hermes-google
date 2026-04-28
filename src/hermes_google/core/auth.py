@@ -14,18 +14,20 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+from hermes_google.core.errors import ServiceError
+
 SCOPES: tuple[str, ...] = (
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/calendar.readonly",
     # Drive: readonly covers files shared to us; drive.file covers own writes.
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/drive.file",
 )
 
 
-class AuthError(Exception):
+class AuthError(ServiceError):
     """Raised on credential / OAuth failures."""
 
 
@@ -47,7 +49,7 @@ def save_credentials(creds: Credentials, path: Path) -> None:
 
 def load_credentials(path: Path) -> Credentials:
     if not path.exists():
-        raise AuthError(f"no credentials at {path}; run `hermes-google auth login`")
+        raise AuthError("credentials not found; run `hermes-google auth login`")
     creds = Credentials.from_authorized_user_file(str(path), scopes=list(SCOPES))
     if not creds.valid:
         if creds.expired and creds.refresh_token:
@@ -62,7 +64,7 @@ def load_credentials(path: Path) -> Credentials:
 
 def run_install_flow(client_secret_path: Path, credentials_path: Path) -> Credentials:
     if not client_secret_path.exists():
-        raise AuthError(f"client secret not found at {client_secret_path}")
+        raise AuthError("client secret file not found; check setup instructions")
     flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_path), scopes=list(SCOPES))
     creds = flow.run_local_server(port=0)
     save_credentials(creds, credentials_path)
@@ -70,9 +72,21 @@ def run_install_flow(client_secret_path: Path, credentials_path: Path) -> Creden
 
 
 def revoke_credentials(path: Path) -> None:
-    # TODO: also POST to https://oauth2.googleapis.com/revoke per spec §8.3
-    #   — deferred to CLI (Task 13).
     if path.exists():
+        try:
+            creds = Credentials.from_authorized_user_file(str(path), scopes=list(SCOPES))
+            token = creds.token or creds.refresh_token
+            if token:
+                import requests
+
+                requests.post(
+                    "https://oauth2.googleapis.com/revoke",
+                    params={"token": token},
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=10,
+                )
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; always delete local file regardless
         path.unlink()
 
 

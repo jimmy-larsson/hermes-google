@@ -25,12 +25,11 @@ def test_load_config_minimal(tmp_path: Path) -> None:
         email = "jimmy@example.com"
 
         [hermes_account]
-        email = "hermes-jimmy@gmail.com"
+        email = "hermes@example.com"
 
         [paths]
         credentials = "/tmp/credentials.json"
         cache = "/tmp/cache"
-        log = "/tmp/cache/log.jsonl"
 
         [mcp]
         name = "hermes-google"
@@ -39,10 +38,9 @@ def test_load_config_minimal(tmp_path: Path) -> None:
     cfg = load_config(path)
     assert isinstance(cfg, Config)
     assert cfg.user_email == "jimmy@example.com"
-    assert cfg.hermes_account_email == "hermes-jimmy@gmail.com"
+    assert cfg.hermes_account_email == "hermes@example.com"
     assert cfg.credentials_path == Path("/tmp/credentials.json")
     assert cfg.cache_dir == Path("/tmp/cache")
-    assert cfg.log_path == Path("/tmp/cache/log.jsonl")
     assert cfg.mcp_name == "hermes-google"
     assert cfg.drive_default_parent_folder_id is None
 
@@ -54,13 +52,12 @@ def test_load_config_with_drive_default(tmp_path: Path) -> None:
         [user]
         email = "jimmy@example.com"
         [hermes_account]
-        email = "hermes-jimmy@gmail.com"
+        email = "hermes@example.com"
         [drive]
         default_parent_folder_id = "FOLDERID"
         [paths]
         credentials = "/tmp/credentials.json"
         cache = "/tmp/cache"
-        log = "/tmp/cache/log.jsonl"
         [mcp]
         name = "hermes-google"
         """,
@@ -77,11 +74,10 @@ def test_load_config_expands_tilde(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         [user]
         email = "jimmy@example.com"
         [hermes_account]
-        email = "hermes-jimmy@gmail.com"
+        email = "hermes@example.com"
         [paths]
         credentials = "~/credentials.json"
         cache = "~/cache"
-        log = "~/cache/log.jsonl"
         [mcp]
         name = "hermes-google"
         """,
@@ -89,7 +85,6 @@ def test_load_config_expands_tilde(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     cfg = load_config(path)
     assert cfg.credentials_path == tmp_path / "credentials.json"
     assert cfg.cache_dir == tmp_path / "cache"
-    assert cfg.log_path == tmp_path / "cache" / "log.jsonl"
 
 
 def test_load_config_missing_required_section(tmp_path: Path) -> None:
@@ -125,11 +120,10 @@ def test_load_config_user_calendar_id(tmp_path: Path) -> None:
         email = "jimmy@example.com"
         calendar_id = "jimmy@example.com"
         [hermes_account]
-        email = "hermes-jimmy@gmail.com"
+        email = "hermes@example.com"
         [paths]
         credentials = "/tmp/c.json"
         cache = "/tmp/cache"
-        log = "/tmp/cache/log.jsonl"
         [mcp]
         name = "hermes-google"
         """,

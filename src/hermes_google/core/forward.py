@@ -10,9 +10,12 @@ Non-forwarded messages pass through unchanged.
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
 from email.message import EmailMessage
+from html.parser import HTMLParser
+from io import StringIO
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,25 @@ class OriginalMessage:
     subject: str
     body: str
     in_reply_to: str | None
+
+
+class _HTMLTextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._buf = StringIO()
+
+    def handle_data(self, data: str) -> None:
+        self._buf.write(data)
+
+    def get_text(self) -> str:
+        return html.unescape(self._buf.getvalue())
+
+
+def strip_html(value: str) -> str:
+    """Remove HTML tags and decode entities, returning plain text."""
+    parser = _HTMLTextExtractor()
+    parser.feed(value)
+    return parser.get_text()
 
 
 _DELIMITERS = [
@@ -37,11 +59,21 @@ _KEEP_HEADERS = {"from", "subject", "date", "to"}
 
 def _get_plain_body(msg: EmailMessage) -> str:
     if msg.is_multipart():
+        plain = ""
+        html_fallback = ""
         for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                return part.get_content()
-        return ""
-    return msg.get_content() if msg.get_content_type() == "text/plain" else ""
+            ct = part.get_content_type()
+            if ct == "text/plain" and not plain:
+                plain = part.get_content()
+            elif ct == "text/html" and not html_fallback:
+                html_fallback = part.get_content()
+        return plain or (strip_html(html_fallback) if html_fallback else "")
+    ct = msg.get_content_type()
+    if ct == "text/plain":
+        return msg.get_content()
+    if ct == "text/html":
+        return strip_html(msg.get_content())
+    return ""
 
 
 def _split_on_delimiter(body: str) -> tuple[str, str] | None:

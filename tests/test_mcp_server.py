@@ -1,8 +1,20 @@
-"""Tests for mcp_server.py — shape of instructions block, tool registration."""
+"""Tests for mcp_server.py — instructions, tool registration, error handling, annotations."""
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock
+
+import pytest
+from fastmcp.exceptions import ToolError
+
+
+def _tool_map():
+    """Return {name: FunctionTool} for the MCP server."""
+    from hermes_google.mcp_server import mcp
+
+    tools = asyncio.run(mcp.list_tools())
+    return {t.name: t for t in tools}
 
 
 def test_instructions_contains_key_policies() -> None:
@@ -17,6 +29,84 @@ def test_instructions_contains_key_policies() -> None:
     ]
     for snippet in required:
         assert snippet in INSTRUCTIONS, f"missing policy snippet: {snippet!r}"
+
+
+def test_mask_error_details_enabled() -> None:
+    from hermes_google.mcp_server import mcp
+
+    assert mcp._mask_error_details is True
+
+
+def test_smoke_server_has_expected_tools() -> None:
+    from hermes_google.mcp_server import mcp
+
+    assert mcp.name == "hermes-google"
+    tool_names = {t.name for t in _tool_map().values()}
+    expected = {
+        "auth_status",
+        "mail_list_pending",
+        "mail_search",
+        "mail_get",
+        "mail_send_draft",
+        "mail_mark_read",
+        "mail_archive",
+        "cal_list_calendars",
+        "cal_list_events",
+        "cal_create_event",
+        "cal_update_event",
+        "cal_delete_event",
+        "drive_search",
+        "drive_list",
+        "drive_get",
+        "drive_upload",
+        "drive_update",
+        "drive_move",
+        "drive_delete",
+    }
+    assert expected == tool_names
+
+
+def test_read_only_tools_annotated() -> None:
+    read_only_tools = {
+        "auth_status",
+        "mail_list_pending",
+        "mail_search",
+        "mail_get",
+        "cal_list_calendars",
+        "cal_list_events",
+        "drive_search",
+        "drive_list",
+        "drive_get",
+    }
+    for tool in _tool_map().values():
+        if tool.name in read_only_tools:
+            assert tool.annotations is not None, f"{tool.name} missing annotations"
+            assert tool.annotations.readOnlyHint is True, f"{tool.name} should be readOnly"
+            assert tool.annotations.destructiveHint is False, (
+                f"{tool.name} should not be destructive"
+            )
+
+
+def test_destructive_tools_annotated() -> None:
+    destructive_tools = {"cal_delete_event", "drive_delete"}
+    for tool in _tool_map().values():
+        if tool.name in destructive_tools:
+            assert tool.annotations is not None, f"{tool.name} missing annotations"
+            assert tool.annotations.destructiveHint is True, f"{tool.name} should be destructive"
+
+
+def test_idempotent_tools_annotated() -> None:
+    idempotent_tools = {
+        "mail_mark_read",
+        "mail_archive",
+        "cal_update_event",
+        "drive_update",
+        "drive_move",
+    }
+    for tool in _tool_map().values():
+        if tool.name in idempotent_tools:
+            assert tool.annotations is not None, f"{tool.name} missing annotations"
+            assert tool.annotations.idempotentHint is True, f"{tool.name} should be idempotent"
 
 
 def test_auth_status_tool_reports_validity(mocker) -> None:
@@ -39,7 +129,8 @@ def test_auth_status_missing_credentials(mocker) -> None:
     mocker.patch.object(mcp_server, "_get_credentials", side_effect=AuthError("missing"))
     result = mcp_server.auth_status()
     assert result["valid"] is False
-    assert "missing" in result["error"]
+    assert "credentials" in result["error"]
+    assert "/home" not in result["error"]
 
 
 def test_auth_status_config_error(mocker) -> None:
@@ -49,7 +140,8 @@ def test_auth_status_config_error(mocker) -> None:
     mocker.patch.object(mcp_server, "_get_credentials", side_effect=ConfigError("bad config"))
     result = mcp_server.auth_status()
     assert result["valid"] is False
-    assert "bad config" in result["error"]
+    assert "configuration" in result["error"]
+    assert "/home" not in result["error"]
 
 
 def test_reset_services_clears_cache(mocker) -> None:
@@ -231,3 +323,87 @@ def test_drive_upload_uses_default_parent(mocker, tmp_path) -> None:
     assert result == {"id": "new-1"}
     _, kwargs = spy.call_args
     assert kwargs["parent_folder_id"] == "DEFAULT"
+
+
+# ---------------------------------------------------------------------------
+# ToolError propagation — every domain error becomes a ToolError
+# ---------------------------------------------------------------------------
+
+
+def test_mail_list_pending_raises_tool_error_on_service_error(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.mail import MailError
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    mocker.patch.object(mcp_server.mail_core, "list_pending", side_effect=MailError("quota"))
+    with pytest.raises(ToolError, match="quota"):
+        mcp_server.mail_list_pending()
+
+
+def test_mail_search_raises_tool_error_on_service_error(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.mail import MailError
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    mocker.patch.object(mcp_server.mail_core, "search", side_effect=MailError("bad query"))
+    with pytest.raises(ToolError, match="bad query"):
+        mcp_server.mail_search(query="x")
+
+
+def test_mail_get_raises_tool_error_on_service_error(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.mail import MailError
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    cfg = MagicMock()
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    mocker.patch.object(mcp_server.mail_core, "get_message", side_effect=MailError("not found"))
+    with pytest.raises(ToolError, match="not found"):
+        mcp_server.mail_get(message_id="m1")
+
+
+def test_cal_list_events_raises_tool_error_on_service_error(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.cal import CalendarError
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    cfg = MagicMock(user_calendar_id="u@example.com")
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    mocker.patch.object(mcp_server.cal_core, "list_events", side_effect=CalendarError("API error"))
+    with pytest.raises(ToolError, match="API error"):
+        mcp_server.cal_list_events(calendar="user", start="s", end="e")
+
+
+def test_drive_search_raises_tool_error_on_service_error(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drive import DriveError
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    mocker.patch.object(mcp_server.drive_core, "search", side_effect=DriveError("forbidden"))
+    with pytest.raises(ToolError, match="forbidden"):
+        mcp_server.drive_search(query="q")
+
+
+def test_drive_delete_raises_tool_error_on_service_error(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drive import DriveError
+
+    fake_services = MagicMock()
+    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
+    mocker.patch.object(mcp_server.drive_core, "delete_file", side_effect=DriveError("not found"))
+    with pytest.raises(ToolError, match="not found"):
+        mcp_server.drive_delete(file_id="f1")
+
+
+def test_auth_error_becomes_tool_error_in_mail_tools(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.auth import AuthError
+
+    mocker.patch.object(mcp_server, "_get_services", side_effect=AuthError("expired"))
+    with pytest.raises(ToolError, match="expired"):
+        mcp_server.mail_list_pending()

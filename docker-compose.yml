@@ -1,0 +1,7 @@
+services:
+  hermes-google:
+    build: .
+    volumes:
+      - ~/.config/hermes-google:/root/.config/hermes-google
+      - ~/.cache/hermes-google:/root/.cache/hermes-google
+    stdin_open: true

@@ -176,7 +176,7 @@ def test_upload_file_malformed_response_raises(
     call.execute.return_value = {"name": "notes.md"}  # missing "id"
     mock_drive_service.files().create.return_value = call
 
-    with pytest.raises(DriveError, match="malformed upload response"):
+    with pytest.raises(DriveError, match="unexpected upload response"):
         upload_file(mock_drive_service, local_path=local, name="notes.md")
 
 

@@ -11,8 +11,10 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from hermes_google.core.errors import ServiceError
 
-class ConfigError(Exception):
+
+class ConfigError(ServiceError):
     """Raised for any config loading failure: file not found, invalid TOML, or missing required fields."""  # noqa: E501
 
 
@@ -22,7 +24,6 @@ class Config:
     hermes_account_email: str
     credentials_path: Path
     cache_dir: Path
-    log_path: Path
     mcp_name: str
     drive_default_parent_folder_id: str | None = None
     user_calendar_id: str | None = None
@@ -46,19 +47,18 @@ def _required(data: dict, section: str, key: str) -> str:
 def load_config(path: Path | None = None) -> Config:
     path = path or default_config_path()
     if not path.exists():
-        raise ConfigError(f"config file not found: {path}")
+        raise ConfigError("config file not found; run setup script")
     with path.open("rb") as fh:
         try:
             data = tomllib.load(fh)
         except tomllib.TOMLDecodeError as exc:
-            raise ConfigError(f"config file is not valid TOML: {path}") from exc
+            raise ConfigError("config file is not valid TOML") from exc
 
     return Config(
         user_email=_required(data, "user", "email"),
         hermes_account_email=_required(data, "hermes_account", "email"),
         credentials_path=_expand(_required(data, "paths", "credentials")),
         cache_dir=_expand(_required(data, "paths", "cache")),
-        log_path=_expand(_required(data, "paths", "log")),
         mcp_name=_required(data, "mcp", "name"),
         drive_default_parent_folder_id=data.get("drive", {}).get("default_parent_folder_id"),
         user_calendar_id=data.get("user", {}).get("calendar_id"),

@@ -196,7 +196,7 @@ def test_send_draft_to_user_email_succeeds(mock_gmail_service: MagicMock) -> Non
 def test_send_draft_rejects_other_recipients(mock_gmail_service: MagicMock) -> None:
     from hermes_google.core.mail import send_draft
 
-    with pytest.raises(MailError, match="only allowed destination"):
+    with pytest.raises(MailError, match="destination must match"):
         send_draft(
             mock_gmail_service,
             user_email="jimmy@example.com",
