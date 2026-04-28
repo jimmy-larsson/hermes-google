@@ -1,0 +1,22 @@
+Delivered-To: hermes@example.com
+From: Jimmy Larsson <jimmy@example.com>
+To: hermes@example.com
+Subject: Fwd: Q1 invoice from Acme
+Date: Thu, 23 Apr 2026 10:05:00 +0900
+Message-ID: <wrap-001@mail.gmail.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="UTF-8"
+
+---------- Forwarded message ---------
+From: Acme Billing <billing@acme.example>
+Date: Wed, 22 Apr 2026 at 18:47
+Subject: Q1 invoice from Acme
+To: Jimmy Larsson <jimmy@example.com>
+
+
+Hi Jimmy,
+
+Please find attached your Q1 invoice, due May 15.
+
+Cheers,
+Acme

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "hermes-google": {
+      "command": "uvx",
+      "args": ["hermes-google-mcp"],
+      "env": {}
+    }
+  }
+}
