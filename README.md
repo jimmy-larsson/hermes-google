@@ -7,25 +7,43 @@ Google account — without granting access to your personal Google account.
 See [`docs/superpowers/specs/2026-04-23-hermes-google-design.md`](docs/superpowers/specs/2026-04-23-hermes-google-design.md)
 for the full design.
 
-## Quick install
+## Install
+
+### 1. Register the MCP server with Claude Code
+
+Pick the scope that fits your use case:
 
 ```bash
-# 1. Clone
-git clone <repo-url> ~/repositories/private/hermes-google
-cd ~/repositories/private/hermes-google
+# Project scope — shared via .mcp.json, committed to git (recommended for teams)
+claude mcp add -s project hermes-google -- uvx hermes-google-mcp
 
-# 2. Create the Hermes Google account (manual step, one-time)
-#    - Sign up for a plain Gmail account
-#    - In Google Cloud Console: create a project, enable Gmail/Calendar/Drive
-#      APIs, create an OAuth 2.0 Client ID (type: Desktop application),
-#      download as client_secret.json
-#    - Place client_secret.json at ~/.config/hermes-google/client_secret.json
+# User scope — available in all your projects
+claude mcp add -s user hermes-google -- uvx hermes-google-mcp
 
-# 3. Run setup
-./scripts/setup.sh
-
-# 4. Gmail filters + Calendar/Drive sharing (printed by setup.sh)
+# Local scope — private to you in this project only (default if -s is omitted)
+claude mcp add hermes-google -- uvx hermes-google-mcp
 ```
+
+### 2. Create a Hermes Google account (one-time)
+
+1. Sign up for a plain Gmail account (e.g., `hermes-yourname@gmail.com`)
+2. In Google Cloud Console: create a project, enable Gmail, Calendar, and
+   Drive APIs
+3. Create an OAuth 2.0 Client ID (type: Desktop application) and download
+   `client_secret.json`
+4. Place it at `~/.config/hermes-google/client_secret.json`
+
+### 3. Run setup
+
+```bash
+# Clone and run the setup script
+git clone https://github.com/jimmy-larsson/hermes-google.git
+cd hermes-google
+./scripts/setup.sh
+```
+
+The setup script creates the config, runs the OAuth flow, and prints the
+remaining manual steps (Gmail filters, Calendar/Drive sharing).
 
 ## Usage
 
