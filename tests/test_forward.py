@@ -153,8 +153,6 @@ def test_unwrap_empty_forwarding_note_is_none() -> None:
 
 
 def test_original_message_fields_are_immutable() -> None:
-    msg = OriginalMessage(
-        sender="a", subject="b", body="c", in_reply_to=None, forwarding_note=None
-    )
+    msg = OriginalMessage(sender="a", subject="b", body="c", in_reply_to=None, forwarding_note=None)
     with pytest.raises(dataclasses.FrozenInstanceError):
         msg.sender = "x"  # type: ignore[misc]
