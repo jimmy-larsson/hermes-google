@@ -28,6 +28,7 @@ def test_unwrap_gmail_web_plain(fixtures_dir: Path) -> None:
     assert "Please find attached your Q1 invoice" in original.body
     assert "Forwarded message" not in original.body
     assert original.in_reply_to == "<thread@example.com>"
+    assert original.forwarding_note is None or isinstance(original.forwarding_note, str)
 
 
 def test_unwrap_gmail_mobile_plain(fixtures_dir: Path) -> None:
@@ -45,8 +46,9 @@ def test_unwrap_manual_client(fixtures_dir: Path) -> None:
     assert original.sender == "Legal <legal@counsel.example>"
     assert original.subject == "Contract revision v3"
     assert "Revised draft attached" in original.body
-    # Wrapping note from the forwarder is NOT part of the original body
     assert "Can you help me with this" not in original.body
+    assert original.forwarding_note is not None
+    assert "Can you help me with this" in original.forwarding_note
 
 
 def test_unwrap_non_forwarded_returns_message_as_is() -> None:
@@ -62,6 +64,7 @@ def test_unwrap_non_forwarded_returns_message_as_is() -> None:
     assert original.subject == "Not a forward"
     assert "Just a regular message" in original.body
     assert original.in_reply_to == "<prev@example.com>"
+    assert original.forwarding_note is None
 
 
 def test_strip_html_removes_tags() -> None:
@@ -118,7 +121,40 @@ def test_unwrap_multipart_html_fallback() -> None:
     assert "<p>" not in original.body
 
 
+def test_unwrap_forwarding_note_preserved() -> None:
+    msg = EmailMessage()
+    msg["From"] = "user@example.com"
+    msg["Subject"] = "Fwd: Important"
+    msg.set_content(
+        "Please review this urgently\n\n"
+        "---------- Forwarded message ---------\n"
+        "From: sender@example.com\n"
+        "Subject: Important\n\n"
+        "The actual content."
+    )
+    original = unwrap(msg)
+    assert original.forwarding_note == "Please review this urgently"
+    assert original.body == "The actual content."
+    assert original.sender == "sender@example.com"
+
+
+def test_unwrap_empty_forwarding_note_is_none() -> None:
+    msg = EmailMessage()
+    msg["From"] = "user@example.com"
+    msg["Subject"] = "Fwd: Stuff"
+    msg.set_content(
+        "---------- Forwarded message ---------\n"
+        "From: sender@example.com\n"
+        "Subject: Stuff\n\n"
+        "Body here."
+    )
+    original = unwrap(msg)
+    assert original.forwarding_note is None
+
+
 def test_original_message_fields_are_immutable() -> None:
-    msg = OriginalMessage(sender="a", subject="b", body="c", in_reply_to=None)
+    msg = OriginalMessage(
+        sender="a", subject="b", body="c", in_reply_to=None, forwarding_note=None
+    )
     with pytest.raises(dataclasses.FrozenInstanceError):
         msg.sender = "x"  # type: ignore[misc]

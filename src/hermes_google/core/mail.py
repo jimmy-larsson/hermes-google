@@ -43,6 +43,7 @@ class MessageDetail:
     original_subject: str
     original_body: str
     in_reply_to: str | None
+    forwarding_note: str | None
     attachment_paths: list[Path]
 
 
@@ -156,6 +157,7 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
         original_subject=original.subject,
         original_body=original.body,
         in_reply_to=original.in_reply_to,
+        forwarding_note=original.forwarding_note,
         attachment_paths=attachments,
     )
 

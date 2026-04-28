@@ -188,8 +188,9 @@ def mail_get(message_id: str) -> dict[str, Any]:
 
     Returns dict with keys: `id`, `thread_id`, `original_sender`,
     `original_subject`, `original_body` (plain text), `in_reply_to`
-    (Message-ID header for threading), `attachment_paths` (list of local
-    file paths in ~/.cache/hermes-google/).
+    (Message-ID header for threading), `forwarding_note` (text the user
+    wrote above the forward delimiter, or null), `attachment_paths` (list
+    of local file paths in ~/.cache/hermes-google/).
     """
     try:
         services = _get_services()

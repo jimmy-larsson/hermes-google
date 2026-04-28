@@ -24,6 +24,7 @@ class OriginalMessage:
     subject: str
     body: str
     in_reply_to: str | None
+    forwarding_note: str | None
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -120,15 +121,16 @@ def unwrap(msg: EmailMessage) -> OriginalMessage:
             subject=msg.get("Subject", ""),
             body=body.strip(),
             in_reply_to=msg.get("In-Reply-To"),
+            forwarding_note=None,
         )
 
-    # The forwarder's preamble (e.g. "Can you help with this?") is intentionally
-    # dropped — callers only need the original message content.
-    _wrap_note, after = split
+    preamble, after = split
     headers, inner_body = _parse_inner_headers(after)
+    note = preamble.strip() or None
     return OriginalMessage(
         sender=headers.get("from", msg.get("From", "")),
         subject=headers.get("subject", msg.get("Subject", "")),
         body=inner_body,
         in_reply_to=msg.get("In-Reply-To"),
+        forwarding_note=note,
     )

@@ -231,6 +231,7 @@ def test_mail_get_tool_serializes_attachment_paths(mocker, tmp_path) -> None:
             original_subject="x",
             original_body="b",
             in_reply_to=None,
+            forwarding_note="Please handle this",
             attachment_paths=[p1, p2],
         ),
     )
