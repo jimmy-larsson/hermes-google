@@ -34,7 +34,7 @@ email = "${USER_EMAIL}"
 email = "${HERMES_EMAIL}"
 
 [paths]
-credentials = "${CONFIG_DIR}/credentials.json"
+credentials = "${CONFIG_DIR}/token.json"
 cache = "${CACHE_DIR}"
 
 [mcp]
@@ -43,20 +43,20 @@ EOF
 fi
 
 # 4. OAuth client secret
-if [[ ! -f "${CONFIG_DIR}/client_secret.json" ]]; then
+if [[ ! -f "${CONFIG_DIR}/oauth_client.json" ]]; then
     yellow "Place your Google Cloud OAuth client secret at:"
-    yellow "  ${CONFIG_DIR}/client_secret.json"
+    yellow "  ${CONFIG_DIR}/oauth_client.json"
     yellow "Then re-run this script."
     exit 0
 fi
 
 # 5. OAuth login
-if [[ ! -f "${CONFIG_DIR}/credentials.json" ]]; then
+if [[ ! -f "${CONFIG_DIR}/token.json" ]]; then
     green "Running OAuth flow"
     # shellcheck disable=SC1091
     source "$(conda info --base)/etc/profile.d/conda.sh"
     conda activate "${ENV_NAME}"
-    hermes-google auth login --client-secret "${CONFIG_DIR}/client_secret.json"
+    hermes-google auth login --client-secret "${CONFIG_DIR}/oauth_client.json"
 fi
 
 # 6. Register MCP server with Claude Code

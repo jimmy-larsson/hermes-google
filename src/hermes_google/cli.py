@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     login = s_auth.add_parser("login")
     login.add_argument(
         "--client-secret",
-        default="~/.config/hermes-google/client_secret.json",
+        default="~/.config/hermes-google/oauth_client.json",
         help="path to OAuth client secret JSON",
     )
     login.set_defaults(func=cmd_auth_login)
