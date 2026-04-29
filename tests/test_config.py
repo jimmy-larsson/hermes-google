@@ -28,7 +28,7 @@ def test_load_config_minimal(tmp_path: Path) -> None:
         email = "hermes@example.com"
 
         [paths]
-        credentials = "/tmp/credentials.json"
+        credentials = "/tmp/token.json"
         cache = "/tmp/cache"
 
         [mcp]
@@ -39,7 +39,7 @@ def test_load_config_minimal(tmp_path: Path) -> None:
     assert isinstance(cfg, Config)
     assert cfg.user_email == "jimmy@example.com"
     assert cfg.hermes_account_email == "hermes@example.com"
-    assert cfg.credentials_path == Path("/tmp/credentials.json")
+    assert cfg.credentials_path == Path("/tmp/token.json")
     assert cfg.cache_dir == Path("/tmp/cache")
     assert cfg.mcp_name == "hermes-google"
     assert cfg.drive_default_parent_folder_id is None
@@ -56,7 +56,7 @@ def test_load_config_with_drive_default(tmp_path: Path) -> None:
         [drive]
         default_parent_folder_id = "FOLDERID"
         [paths]
-        credentials = "/tmp/credentials.json"
+        credentials = "/tmp/token.json"
         cache = "/tmp/cache"
         [mcp]
         name = "hermes-google"
@@ -76,14 +76,14 @@ def test_load_config_expands_tilde(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         [hermes_account]
         email = "hermes@example.com"
         [paths]
-        credentials = "~/credentials.json"
+        credentials = "~/token.json"
         cache = "~/cache"
         [mcp]
         name = "hermes-google"
         """,
     )
     cfg = load_config(path)
-    assert cfg.credentials_path == tmp_path / "credentials.json"
+    assert cfg.credentials_path == tmp_path / "token.json"
     assert cfg.cache_dir == tmp_path / "cache"
 
 
