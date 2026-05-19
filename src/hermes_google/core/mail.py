@@ -39,6 +39,7 @@ class PendingMessage:
 class MessageDetail:
     id: str
     thread_id: str
+    sender: str
     original_sender: str
     original_subject: str
     original_body: str
@@ -148,11 +149,13 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
     except (KeyError, binascii.Error, ValueError) as exc:
         raise MailError(f"malformed response for message {message_id}") from exc
 
+    sender = str(parsed.get("From", ""))
     original = unwrap(parsed)
     attachments = _walk_attachments(message_id, parsed, cache_dir)
     return MessageDetail(
         id=resp["id"],
         thread_id=resp.get("threadId", ""),
+        sender=sender,
         original_sender=original.sender,
         original_subject=original.subject,
         original_body=original.body,
@@ -176,14 +179,11 @@ def _build_raw(to: str, subject: str, body: str, in_reply_to: str | None = None)
 def send_draft(
     service: Any,
     *,
-    user_email: str,
     to: str,
     subject: str,
     body: str,
     in_reply_to: str | None = None,
 ) -> str:
-    if to.strip().lower() != user_email.strip().lower():
-        raise MailError("send_draft: destination must match the configured user email")
     try:
         raw = _build_raw(to, subject, body, in_reply_to=in_reply_to)
         resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()

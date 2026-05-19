@@ -173,19 +173,16 @@ def test_mail_list_pending_tool(mocker) -> None:
     ]
 
 
-def test_mail_send_draft_tool_passes_user_email(mocker) -> None:
+def test_mail_send_draft_tool_calls_core(mocker) -> None:
     from hermes_google import mcp_server
 
     fake_services = MagicMock()
     mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
-    cfg = MagicMock(user_email="jimmy@example.com")
-    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
     send_spy = mocker.patch.object(mcp_server.mail_core, "send_draft", return_value="sent-1")
 
     result = mcp_server.mail_send_draft(to="jimmy@example.com", subject="s", body="b")
     assert result == {"id": "sent-1"}
     _, kwargs = send_spy.call_args
-    assert kwargs["user_email"] == "jimmy@example.com"
     assert kwargs["to"] == "jimmy@example.com"
 
 
@@ -227,6 +224,7 @@ def test_mail_get_tool_serializes_attachment_paths(mocker, tmp_path) -> None:
         return_value=MessageDetail(
             id="m1",
             thread_id="t",
+            sender="forwarder@example.com",
             original_sender="s",
             original_subject="x",
             original_body="b",

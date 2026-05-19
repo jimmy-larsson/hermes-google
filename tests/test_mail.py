@@ -182,7 +182,6 @@ def test_send_draft_to_user_email_succeeds(mock_gmail_service: MagicMock) -> Non
 
     result = send_draft(
         mock_gmail_service,
-        user_email="jimmy@example.com",
         to="jimmy@example.com",
         subject="Draft: Re: invoice",
         body="Here's your draft.",
@@ -193,18 +192,20 @@ def test_send_draft_to_user_email_succeeds(mock_gmail_service: MagicMock) -> Non
     assert "raw" in kwargs["body"]
 
 
-def test_send_draft_rejects_other_recipients(mock_gmail_service: MagicMock) -> None:
+def test_send_draft_allows_any_recipient(mock_gmail_service: MagicMock) -> None:
     from hermes_google.core.mail import send_draft
 
-    with pytest.raises(MailError, match="destination must match"):
-        send_draft(
-            mock_gmail_service,
-            user_email="jimmy@example.com",
-            to="someone-else@example.com",
-            subject="x",
-            body="y",
-        )
-    mock_gmail_service.users().messages().send.assert_not_called()
+    send_call = MagicMock()
+    send_call.execute.return_value = {"id": "sent-2"}
+    mock_gmail_service.users().messages().send.return_value = send_call
+
+    result = send_draft(
+        mock_gmail_service,
+        to="someone-else@example.com",
+        subject="x",
+        body="y",
+    )
+    assert result == "sent-2"
 
 
 def test_mark_read_removes_unread_label(mock_gmail_service: MagicMock) -> None:
@@ -244,7 +245,6 @@ def test_send_draft_with_in_reply_to_adds_threading_headers(
 
     result = send_draft(
         mock_gmail_service,
-        user_email="jimmy@example.com",
         to="jimmy@example.com",
         subject="Re: thread",
         body="reply body",

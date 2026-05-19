@@ -36,9 +36,9 @@ POLICIES:
    Ask after delivering a draft ("want me to archive my copy?") AND when the user
    mentions they've sent the reply. No silent auto-archive.
 
-2. Send restriction — `mail_send_draft` only delivers to the configured user
-   email. The server rejects any other destination. Do not attempt to send to
-   external recipients.
+2. Send restriction — `mail_send_draft` delivers to the user who forwarded the
+   message to Hermes (the `sender` field from `mail_get`). Do not send to
+   unrelated external recipients.
 
 3. Delete friction — `drive_delete` requires the user to have used an explicit
    "delete" verb in their request. Paraphrases ("remove", "get rid of") do not
@@ -205,11 +205,12 @@ def mail_search(
 def mail_get(message_id: str) -> dict[str, Any]:
     """Fetch a single email by ID. Unwraps forwarded messages to extract the original.
 
-    Returns dict with keys: `id`, `thread_id`, `original_sender`,
-    `original_subject`, `original_body` (plain text), `in_reply_to`
-    (Message-ID header for threading), `forwarding_note` (text the user
-    wrote above the forward delimiter, or null), `attachment_paths` (list
-    of local file paths in ~/.cache/hermes-google/).
+    Returns dict with keys: `id`, `thread_id`, `sender` (the user who
+    forwarded this message to Hermes — use as the `to` for replies),
+    `original_sender`, `original_subject`, `original_body` (plain text),
+    `in_reply_to` (Message-ID header for threading), `forwarding_note`
+    (text the user wrote above the forward delimiter, or null),
+    `attachment_paths` (list of local file paths in ~/.cache/hermes-google/).
     """
     services = _get_services()
     cfg = _get_config()
@@ -227,19 +228,17 @@ def mail_send_draft(
     body: str,
     in_reply_to: str | None = None,
 ) -> dict[str, Any]:
-    """Send a draft email from Hermes's account to the user's own inbox.
+    """Send a draft email from Hermes's account.
 
-    The destination is restricted to the configured user email; any other `to`
-    value is rejected by the server. To reply to a thread, pass the
+    The destination should be the `sender` returned by `mail_get` — i.e. the
+    user who forwarded the message to Hermes. To reply to a thread, pass the
     `in_reply_to` value from `mail_get`.
 
     Returns dict with key: `id` (sent message ID).
     """
     services = _get_services()
-    cfg = _get_config()
     sent_id = mail_core.send_draft(
         services.gmail,
-        user_email=cfg.user_email,
         to=to,
         subject=subject,
         body=body,
