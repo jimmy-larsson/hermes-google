@@ -9,6 +9,7 @@ Tool functions are thin wrappers around `hermes_google.core.*` that:
 
 from __future__ import annotations
 
+import functools
 from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any
@@ -97,6 +98,28 @@ def _reset_services() -> None:
     _services = None
 
 
+def _auto_retry(fn):
+    """Retry once with fresh credentials on service failure.
+
+    After ``auth login`` writes a new token.json the cached credentials are
+    stale.  On the first ServiceError we drop the cache and retry — the
+    second attempt loads the new token from disk.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except ServiceError:
+            _reset_services()
+            try:
+                return fn(*args, **kwargs)
+            except ServiceError as exc:
+                raise ToolError(str(exc)) from exc
+
+    return wrapper
+
+
 mcp = FastMCP("hermes-google", instructions=INSTRUCTIONS, mask_error_details=True)
 
 
@@ -121,6 +144,7 @@ def auth_status() -> dict[str, Any]:
             "scopes": list(getattr(creds, "scopes", []) or []),
         }
     except AuthError:
+        _reset_services()
         return {
             "valid": False,
             "expired": False,
@@ -128,6 +152,7 @@ def auth_status() -> dict[str, Any]:
             "error": "credentials not found or invalid; run `hermes-google auth login`",
         }
     except ConfigError:
+        _reset_services()
         return {
             "valid": False,
             "expired": False,
@@ -142,6 +167,7 @@ def auth_status() -> dict[str, Any]:
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False})
+@_auto_retry
 def mail_list_pending(
     limit: Annotated[int, Field(default=20, ge=1, le=100, description="Max results (1-100)")] = 20,
 ) -> list[dict[str, Any]]:
@@ -150,16 +176,12 @@ def mail_list_pending(
     Returns a list of dicts, each with keys: `id`, `thread_id`, `sender`,
     `subject`, `date`, `snippet`.
     """
-    try:
-        services = _get_services()
-        return [
-            asdict(m) for m in mail_core.list_pending(services.gmail, limit=_clamp_limit(limit))
-        ]
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    return [asdict(m) for m in mail_core.list_pending(services.gmail, limit=_clamp_limit(limit))]
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False})
+@_auto_retry
 def mail_search(
     query: str,
     limit: Annotated[int, Field(default=20, ge=1, le=100, description="Max results (1-100)")] = 20,
@@ -172,17 +194,14 @@ def mail_search(
     Returns a list of dicts, each with keys: `id`, `thread_id`, `sender`,
     `subject`, `date`, `snippet`.
     """
-    try:
-        services = _get_services()
-        return [
-            asdict(m)
-            for m in mail_core.search(services.gmail, query=query, limit=_clamp_limit(limit))
-        ]
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    return [
+        asdict(m) for m in mail_core.search(services.gmail, query=query, limit=_clamp_limit(limit))
+    ]
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False})
+@_auto_retry
 def mail_get(message_id: str) -> dict[str, Any]:
     """Fetch a single email by ID. Unwraps forwarded messages to extract the original.
 
@@ -192,20 +211,16 @@ def mail_get(message_id: str) -> dict[str, Any]:
     wrote above the forward delimiter, or null), `attachment_paths` (list
     of local file paths in ~/.cache/hermes-google/).
     """
-    try:
-        services = _get_services()
-        cfg = _get_config()
-        detail = mail_core.get_message(
-            services.gmail, message_id=message_id, cache_dir=cfg.cache_dir
-        )
-        data = asdict(detail)
-        data["attachment_paths"] = [str(p) for p in detail.attachment_paths]
-        return data
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    cfg = _get_config()
+    detail = mail_core.get_message(services.gmail, message_id=message_id, cache_dir=cfg.cache_dir)
+    data = asdict(detail)
+    data["attachment_paths"] = [str(p) for p in detail.attachment_paths]
+    return data
 
 
 @mcp.tool(annotations={"destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+@_auto_retry
 def mail_send_draft(
     to: str,
     subject: str,
@@ -220,49 +235,42 @@ def mail_send_draft(
 
     Returns dict with key: `id` (sent message ID).
     """
-    try:
-        services = _get_services()
-        cfg = _get_config()
-        sent_id = mail_core.send_draft(
-            services.gmail,
-            user_email=cfg.user_email,
-            to=to,
-            subject=subject,
-            body=body,
-            in_reply_to=in_reply_to,
-        )
-        return {"id": sent_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    cfg = _get_config()
+    sent_id = mail_core.send_draft(
+        services.gmail,
+        user_email=cfg.user_email,
+        to=to,
+        subject=subject,
+        body=body,
+        in_reply_to=in_reply_to,
+    )
+    return {"id": sent_id}
 
 
 @mcp.tool(annotations={"destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+@_auto_retry
 def mail_mark_read(message_id: str) -> dict[str, Any]:
     """Mark a message as read in Hermes's inbox (removes the UNREAD label).
 
     Returns dict with key: `id` (the message ID that was marked).
     """
-    try:
-        services = _get_services()
-        mail_core.mark_read(services.gmail, message_id=message_id)
-        return {"id": message_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    mail_core.mark_read(services.gmail, message_id=message_id)
+    return {"id": message_id}
 
 
 @mcp.tool(annotations={"destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+@_auto_retry
 def mail_archive(message_id: str) -> dict[str, Any]:
     """Archive a message in Hermes's inbox (removes the INBOX label).
 
     Never call without user confirmation.
     Returns dict with key: `id` (the message ID that was archived).
     """
-    try:
-        services = _get_services()
-        mail_core.archive(services.gmail, message_id=message_id)
-        return {"id": message_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    mail_core.archive(services.gmail, message_id=message_id)
+    return {"id": message_id}
 
 
 # ---------------------------------------------------------------------------
@@ -277,20 +285,19 @@ def _resolve_cal(alias: str) -> str:
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False})
+@_auto_retry
 def cal_list_calendars() -> list[dict[str, Any]]:
     """List all calendars visible to Hermes (own calendar + any shared with Hermes).
 
     Returns a list of dicts, each with keys: `id` (calendar ID), `summary`
     (display name), `access_role` (e.g., 'owner', 'writer', 'reader').
     """
-    try:
-        services = _get_services()
-        return [asdict(c) for c in cal_core.list_calendars(services.calendar)]
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    return [asdict(c) for c in cal_core.list_calendars(services.calendar)]
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False})
+@_auto_retry
 def cal_list_events(
     calendar: str,
     start: str,
@@ -307,20 +314,18 @@ def cal_list_events(
     Returns a list of dicts, each with keys: `id`, `title`, `start`, `end`,
     `attendees` (list of email strings).
     """
-    try:
-        services = _get_services()
-        cid = _resolve_cal(calendar)
-        return [
-            asdict(e)
-            for e in cal_core.list_events(
-                services.calendar, calendar_id=cid, time_min=start, time_max=end
-            )
-        ]
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    cid = _resolve_cal(calendar)
+    return [
+        asdict(e)
+        for e in cal_core.list_events(
+            services.calendar, calendar_id=cid, time_min=start, time_max=end
+        )
+    ]
 
 
 @mcp.tool(annotations={"destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+@_auto_retry
 def cal_create_event(
     calendar: str,
     title: str,
@@ -336,24 +341,22 @@ def cal_create_event(
 
     Returns dict with key: `id` (created event ID).
     """
-    try:
-        services = _get_services()
-        cid = _resolve_cal(calendar)
-        event_id = cal_core.create_event(
-            services.calendar,
-            calendar_id=cid,
-            title=title,
-            start=start,
-            end=end,
-            attendees=attendees,
-            description=description,
-        )
-        return {"id": event_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    cid = _resolve_cal(calendar)
+    event_id = cal_core.create_event(
+        services.calendar,
+        calendar_id=cid,
+        title=title,
+        start=start,
+        end=end,
+        attendees=attendees,
+        description=description,
+    )
+    return {"id": event_id}
 
 
 @mcp.tool(annotations={"destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+@_auto_retry
 def cal_update_event(
     calendar: str,
     event_id: str,
@@ -367,16 +370,14 @@ def cal_update_event(
 
     Returns dict with key: `id` (updated event ID).
     """
-    try:
-        services = _get_services()
-        cid = _resolve_cal(calendar)
-        cal_core.update_event(services.calendar, calendar_id=cid, event_id=event_id, fields=fields)
-        return {"id": event_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    cid = _resolve_cal(calendar)
+    cal_core.update_event(services.calendar, calendar_id=cid, event_id=event_id, fields=fields)
+    return {"id": event_id}
 
 
 @mcp.tool(annotations={"destructiveHint": True, "openWorldHint": False})
+@_auto_retry
 def cal_delete_event(calendar: str, event_id: str) -> dict[str, Any]:
     """Delete a calendar event. Requires user confirmation before calling.
 
@@ -384,13 +385,10 @@ def cal_delete_event(calendar: str, event_id: str) -> dict[str, Any]:
 
     Returns dict with key: `id` (deleted event ID).
     """
-    try:
-        services = _get_services()
-        cid = _resolve_cal(calendar)
-        cal_core.delete_event(services.calendar, calendar_id=cid, event_id=event_id)
-        return {"id": event_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    cid = _resolve_cal(calendar)
+    cal_core.delete_event(services.calendar, calendar_id=cid, event_id=event_id)
+    return {"id": event_id}
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +397,7 @@ def cal_delete_event(calendar: str, event_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False})
+@_auto_retry
 def drive_search(
     query: str,
     mime_type: str | None = None,
@@ -411,19 +410,17 @@ def drive_search(
 
     Returns a list of dicts, each with keys: `id`, `name`, `mime_type`.
     """
-    try:
-        services = _get_services()
-        return [
-            asdict(f)
-            for f in drive_core.search(
-                services.drive, query=query, mime_type=mime_type, limit=_clamp_limit(limit)
-            )
-        ]
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    return [
+        asdict(f)
+        for f in drive_core.search(
+            services.drive, query=query, mime_type=mime_type, limit=_clamp_limit(limit)
+        )
+    ]
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False})
+@_auto_retry
 def drive_list(
     folder_id: str,
     limit: Annotated[int, Field(default=50, ge=1, le=100, description="Max results (1-100)")] = 50,
@@ -432,19 +429,17 @@ def drive_list(
 
     Returns a list of dicts, each with keys: `id`, `name`, `mime_type`.
     """
-    try:
-        services = _get_services()
-        return [
-            asdict(f)
-            for f in drive_core.list_folder(
-                services.drive, folder_id=folder_id, limit=_clamp_limit(limit)
-            )
-        ]
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    return [
+        asdict(f)
+        for f in drive_core.list_folder(
+            services.drive, folder_id=folder_id, limit=_clamp_limit(limit)
+        )
+    ]
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False})
+@_auto_retry
 def drive_get(file_id: str) -> dict[str, Any]:
     """Download a Drive file to the local cache directory.
 
@@ -453,16 +448,14 @@ def drive_get(file_id: str) -> dict[str, Any]:
 
     Returns dict with key: `path` (absolute local file path).
     """
-    try:
-        services = _get_services()
-        cfg = _get_config()
-        path = drive_core.get_file(services.drive, file_id=file_id, cache_dir=cfg.cache_dir)
-        return {"path": str(path)}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    cfg = _get_config()
+    path = drive_core.get_file(services.drive, file_id=file_id, cache_dir=cfg.cache_dir)
+    return {"path": str(path)}
 
 
 @mcp.tool(annotations={"destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
+@_auto_retry
 def drive_upload(
     local_path: str,
     name: str,
@@ -474,61 +467,52 @@ def drive_upload(
 
     Returns dict with key: `id` (created Drive file ID).
     """
-    try:
-        services = _get_services()
-        cfg = _get_config()
-        parent = folder_id or cfg.drive_default_parent_folder_id
-        file_id = drive_core.upload_file(
-            services.drive,
-            local_path=Path(local_path),
-            name=name,
-            parent_folder_id=parent,
-        )
-        return {"id": file_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    cfg = _get_config()
+    parent = folder_id or cfg.drive_default_parent_folder_id
+    file_id = drive_core.upload_file(
+        services.drive,
+        local_path=Path(local_path),
+        name=name,
+        parent_folder_id=parent,
+    )
+    return {"id": file_id}
 
 
 @mcp.tool(annotations={"destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+@_auto_retry
 def drive_update(file_id: str, local_path: str) -> dict[str, Any]:
     """Replace a Drive file's contents with a local file. Requires user confirmation before calling.
 
     Returns dict with key: `id` (updated Drive file ID).
     """
-    try:
-        services = _get_services()
-        drive_core.update_file(services.drive, file_id=file_id, local_path=Path(local_path))
-        return {"id": file_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    drive_core.update_file(services.drive, file_id=file_id, local_path=Path(local_path))
+    return {"id": file_id}
 
 
 @mcp.tool(annotations={"destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+@_auto_retry
 def drive_move(file_id: str, parent_folder_id: str) -> dict[str, Any]:
     """Move a Drive file into a different parent folder. Requires user confirmation before calling.
 
     Returns dict with key: `id` (moved Drive file ID).
     """
-    try:
-        services = _get_services()
-        drive_core.move_file(services.drive, file_id=file_id, parent_folder_id=parent_folder_id)
-        return {"id": file_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    drive_core.move_file(services.drive, file_id=file_id, parent_folder_id=parent_folder_id)
+    return {"id": file_id}
 
 
 @mcp.tool(annotations={"destructiveHint": True, "openWorldHint": False})
+@_auto_retry
 def drive_delete(file_id: str) -> dict[str, Any]:
     """Delete a Drive file. Requires user to have used an explicit 'delete' verb.
 
     Returns dict with key: `id` (deleted Drive file ID).
     """
-    try:
-        services = _get_services()
-        drive_core.delete_file(services.drive, file_id=file_id)
-        return {"id": file_id}
-    except ServiceError as exc:
-        raise ToolError(str(exc)) from exc
+    services = _get_services()
+    drive_core.delete_file(services.drive, file_id=file_id)
+    return {"id": file_id}
 
 
 def main() -> None:

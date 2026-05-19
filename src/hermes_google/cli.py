@@ -41,7 +41,7 @@ def _print_json(value) -> None:
 def cmd_auth_login(args: argparse.Namespace) -> int:
     cfg = _cfg()
     client_secret = Path(args.client_secret).expanduser()
-    auth_core.run_install_flow(client_secret, cfg.credentials_path)
+    auth_core.run_install_flow(client_secret, cfg.credentials_path, headless=args.headless)
     print(f"credentials saved to {cfg.credentials_path}")
     return 0
 
@@ -119,6 +119,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--client-secret",
         default="~/.config/hermes-google/oauth_client.json",
         help="path to OAuth client secret JSON",
+    )
+    login.add_argument(
+        "--headless",
+        action="store_true",
+        help="use console flow (prints URL, paste auth code) for headless environments",
     )
     login.set_defaults(func=cmd_auth_login)
 

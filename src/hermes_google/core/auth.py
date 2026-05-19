@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -62,11 +63,24 @@ def load_credentials(path: Path) -> Credentials:
     return creds
 
 
-def run_install_flow(client_secret_path: Path, credentials_path: Path) -> Credentials:
+def run_install_flow(
+    client_secret_path: Path, credentials_path: Path, *, headless: bool = False
+) -> Credentials:
     if not client_secret_path.exists():
         raise AuthError("client secret file not found; check setup instructions")
     flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_path), scopes=list(SCOPES))
-    creds = flow.run_local_server(port=0)
+    if headless:
+        flow.redirect_uri = "http://localhost:8085"
+        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+        print(f"\nOpen this URL in any browser:\n\n{auth_url}\n")
+        print("After authorizing, you'll be redirected to a page that won't load.")
+        print("Copy the FULL URL from your browser's address bar and paste it here:\n")
+        redirect_url = input("URL: ").strip()
+        code = parse_qs(urlparse(redirect_url).query)["code"][0]
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+    else:
+        creds = flow.run_local_server(port=0)
     save_credentials(creds, credentials_path)
     return creds
 
