@@ -87,10 +87,31 @@ def test_load_credentials_refreshes_when_expired(
     assert "refreshed" in json.loads(path.read_text())["token"]
 
 
+def test_requests_from_shared_service_get_own_authorized_transport() -> None:
+    from google.oauth2.credentials import Credentials
+
+    creds = Credentials(
+        token="t",
+        refresh_token="r",
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id="cid",
+        client_secret="csec",
+    )
+    services = build_services(creds)
+
+    req_a = services.drive.files().list(q="a")
+    req_b = services.drive.files().list(q="b")
+
+    assert req_a.http is not req_b.http
+    assert req_a.http is not services.drive._http
+    assert req_a.http.credentials is creds
+    assert req_b.http.credentials is creds
+
+
 def test_build_services_returns_three_services(mocker: pytest_mock.MockerFixture) -> None:
     fake_gmail, fake_cal, fake_drive = MagicMock(), MagicMock(), MagicMock()
 
-    def _build(api: str, version: str, credentials):  # noqa: ARG001
+    def _build(api: str, version: str, **kwargs):  # noqa: ARG001
         return {"gmail": fake_gmail, "calendar": fake_cal, "drive": fake_drive}[api]
 
     mocker.patch.object(auth_module, "build", side_effect=_build)

@@ -1,6 +1,6 @@
 [project]
 name = "hermes-google-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server giving Hermes scoped Gmail/Calendar/Drive access via a dedicated Google account"
 requires-python = ">=3.12"
 license = "MIT"
@@ -21,6 +21,7 @@ dependencies = [
     "fastmcp>=2.0",
     "google-api-python-client>=2.120",
     "google-auth>=2.28",
+    "google-auth-httplib2>=0.2",
     "google-auth-oauthlib>=1.2",
 ]
 

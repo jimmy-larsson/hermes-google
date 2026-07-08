@@ -10,10 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import google_auth_httplib2
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from googleapiclient.http import HttpRequest, build_http
 
 from hermes_google.core.errors import ServiceError
 
@@ -104,9 +106,20 @@ def revoke_credentials(path: Path) -> None:
         path.unlink()
 
 
+def _authorized_http(creds: Credentials) -> google_auth_httplib2.AuthorizedHttp:
+    return google_auth_httplib2.AuthorizedHttp(creds, http=build_http())
+
+
+def _build_thread_safe(api: str, version: str, creds: Credentials):
+    def request_builder(_http, *args, **kwargs):
+        return HttpRequest(_authorized_http(creds), *args, **kwargs)
+
+    return build(api, version, requestBuilder=request_builder, http=_authorized_http(creds))
+
+
 def build_services(creds: Credentials) -> Services:
     return Services(
-        gmail=build("gmail", "v1", credentials=creds),
-        calendar=build("calendar", "v3", credentials=creds),
-        drive=build("drive", "v3", credentials=creds),
+        gmail=_build_thread_safe("gmail", "v1", creds),
+        calendar=_build_thread_safe("calendar", "v3", creds),
+        drive=_build_thread_safe("drive", "v3", creds),
     )
