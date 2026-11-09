@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from email import errors as email_errors
 from email import message_from_bytes
-from email.headerregistry import Address
+from email.headerregistry import Address, AddressHeader
 from email.message import EmailMessage, Message
 from email.policy import default as default_policy
 from pathlib import Path
@@ -40,26 +40,35 @@ class Recipient:
 def _parse_header_addresses(value: str) -> tuple[list[Recipient], list[str]]:
     """Parse an address header value into (usable recipients, rejected entries)."""
     try:
-        header = default_policy.header_factory("To", value)
+        address_list = AddressHeader.value_parser(value)
     except Exception:  # noqa: BLE001
         return [], [value]
-    if any(isinstance(defect, email_errors.InvalidHeaderDefect) for defect in header.defects):
+    if _has_invalid_defect(address_list.defects):
         return [], [value]
     good: list[Recipient] = []
     bad: list[str] = []
-    for address in header.addresses:
-        spec = address.addr_spec
-        shown = f"{address.display_name} <{spec}>".strip()
-        if not (spec.isascii() and _ADDR_SPEC_RE.fullmatch(spec)):
-            bad.append(shown)
+    for token in address_list.addresses:
+        if _has_invalid_defect(token.all_defects):
+            bad.append(str(token).strip())
             continue
-        try:
-            str(Address(display_name=address.display_name, addr_spec=spec))
-        except (ValueError, IndexError):
-            bad.append(shown)
-            continue
-        good.append(Recipient(name=address.display_name, addr=spec))
+        for mailbox in token.all_mailboxes:
+            spec = mailbox.addr_spec or ""
+            name = mailbox.display_name or ""
+            shown = f"{name} <{spec}>".strip()
+            if not (spec.isascii() and _ADDR_SPEC_RE.fullmatch(spec)):
+                bad.append(shown)
+                continue
+            try:
+                str(Address(display_name=name, addr_spec=spec))
+            except Exception:  # noqa: BLE001
+                bad.append(shown)
+                continue
+            good.append(Recipient(name=name, addr=spec))
     return good, bad
+
+
+def _has_invalid_defect(defects) -> bool:
+    return any(isinstance(defect, email_errors.InvalidHeaderDefect) for defect in defects)
 
 
 def parse_recipients(entries: list[str]) -> list[Recipient]:
@@ -244,12 +253,12 @@ def reply_context(detail: MessageDetail, *, user_email: str, hermes_email: str) 
         return good
 
     origin = parse(detail.original_reply_to) or parse(detail.original_sender)
+    if not origin:
+        raise MailError("original sender address unusable; pass to explicitly")
     own = {user_email.lower(), hermes_email.lower()}
     to = _dedupe(origin + parse(detail.original_to), exclude=own)
     if not to:
         to = _dedupe(origin, exclude=set())
-    if not to:
-        raise MailError("no usable reply recipient; pass to explicitly")
     cc = _dedupe(parse(detail.original_cc), exclude=own | {r.addr.lower() for r in to})
 
     if detail.rfc_message_id:

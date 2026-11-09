@@ -278,7 +278,7 @@ def test_reply_context_drops_bad_header_entries_into_warning() -> None:
 
 
 def test_reply_context_fails_when_no_recipient_is_usable() -> None:
-    with pytest.raises(MailError, match="no usable reply recipient"):
+    with pytest.raises(MailError, match="sender address unusable"):
         _ctx(original_sender="Jörg <jörg@example.com>")
 
 
@@ -651,3 +651,32 @@ def test_update_draft_keeps_unicode_separators_inside_stored_body(
         msg.get_body(preferencelist=("plain",)).get_content()
         == "one\u2028\u0085still\x0cone\ntwo\n"
     )
+
+
+def test_parse_recipients_tolerates_obsolete_syntax() -> None:
+    assert parse_recipients(["a@x.com, , b@x.com"]) == [
+        Recipient(name="", addr="a@x.com"),
+        Recipient(name="", addr="b@x.com"),
+    ]
+    assert parse_recipients(["Dr. Alice Smith <a@x.com>"]) == [
+        Recipient(name="Dr. Alice Smith", addr="a@x.com")
+    ]
+
+
+def test_reply_context_keeps_author_when_an_unquoted_comma_name_precedes() -> None:
+    ctx = _ctx(original_sender="Larsson, Jimmy <j@x.com>", original_to="Carol <c@x.com>")
+    assert [(r.name, r.addr) for r in ctx.to] == [("Jimmy", "j@x.com"), ("Carol", "c@x.com")]
+    assert ctx.warning is not None
+    assert "Larsson" in ctx.warning
+
+
+def test_reply_context_fails_when_sender_header_is_malformed_even_with_to() -> None:
+    with pytest.raises(MailError, match="sender address unusable"):
+        _ctx(original_sender="a@x.com b@x.com", original_to="Carol <c@x.com>")
+
+
+def test_reply_context_rejects_only_the_bad_cc_token() -> None:
+    ctx = _ctx(original_cc="Bob <b@x.com>, .bad@x.com, Carol <c@x.com>")
+    assert [r.addr for r in ctx.cc] == ["b@x.com", "c@x.com"]
+    assert ctx.warning is not None
+    assert ".bad@x.com" in ctx.warning
