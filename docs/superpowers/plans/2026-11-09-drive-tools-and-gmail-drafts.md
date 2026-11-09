@@ -2603,7 +2603,97 @@ updates the tool list."
 
 ---
 
-### Task 11: Version bump
+### Task 11: Upload and update explain a missing local file (Mimir #1112)
+
+**Files:**
+- Modify: `src/hermes_google/core/drive.py` (`upload_file`, `update_file`)
+- Test: `tests/test_drive.py`
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_drive.py`:
+
+```python
+def test_upload_file_missing_local_file_raises_drive_error(
+    tmp_path: Path, mock_drive_service: MagicMock
+) -> None:
+    with pytest.raises(DriveError, match="upload failed: FileNotFoundError"):
+        upload_file(mock_drive_service, local_path=tmp_path / "missing.md", name="missing.md")
+    mock_drive_service.files().create.assert_not_called()
+
+
+def test_update_file_missing_local_file_raises_drive_error(
+    tmp_path: Path, mock_drive_service: MagicMock
+) -> None:
+    with pytest.raises(DriveError, match="update failed: FileNotFoundError"):
+        update_file(mock_drive_service, file_id="f1", local_path=tmp_path / "missing.md")
+    mock_drive_service.files().update.assert_not_called()
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `$PY -m pytest tests/test_drive.py -k missing_local_file -v`
+Expected: both FAIL with `FileNotFoundError` escaping instead of `DriveError` (pytest reports the raw `FileNotFoundError`).
+
+- [ ] **Step 3: Build the upload media inside the try blocks**
+
+In `src/hermes_google/core/drive.py` replace the bodies of `upload_file` and `update_file`:
+
+```python
+def upload_file(
+    service: Any,
+    *,
+    local_path: Path,
+    name: str,
+    parent_folder_id: str | None = None,
+) -> str:
+    body: dict[str, Any] = {"name": name}
+    if parent_folder_id:
+        body["parents"] = [parent_folder_id]
+    try:
+        media = MediaFileUpload(str(local_path), resumable=True)
+        resp = service.files().create(body=body, media_body=media, fields="id").execute()
+    except Exception as exc:  # noqa: BLE001
+        raise DriveError(api_failure("upload", exc)) from exc
+    try:
+        return resp["id"]
+    except KeyError as exc:
+        raise DriveError("unexpected upload response format") from exc
+
+
+def update_file(service: Any, *, file_id: str, local_path: Path) -> None:
+    try:
+        media = MediaFileUpload(str(local_path), resumable=True)
+        service.files().update(fileId=file_id, media_body=media).execute()
+    except Exception as exc:  # noqa: BLE001
+        raise DriveError(api_failure("update", exc)) from exc
+```
+
+- [ ] **Step 4: Run the drive tests**
+
+Run: `$PY -m pytest tests/test_drive.py -v`
+Expected: all pass (the existing upload and update tests patch `MediaFileUpload` on the module, which still works inside the try).
+
+- [ ] **Step 5: Run the full suite and lint**
+
+Run: `$PY -m pytest -q && /home/hermes_jimmy/miniconda3/envs/hermes-google/bin/ruff check src tests && /home/hermes_jimmy/miniconda3/envs/hermes-google/bin/ruff format src tests`
+Expected: all pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/hermes_google/core/drive.py tests/test_drive.py
+git commit -m "fix: upload and update explain a missing local file
+
+MediaFileUpload opened the file before the try, so a wrong local_path
+raised FileNotFoundError, which is not a ServiceError and reached Hermes
+as a masked error. Building it inside the try routes it through
+api_failure like every other Drive failure."
+```
+
+---
+
+### Task 12: Version bump
 
 **Files:**
 - Modify: `pyproject.toml`
