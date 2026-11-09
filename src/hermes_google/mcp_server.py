@@ -44,7 +44,9 @@ POLICIES:
    subject and body) in chat before creating it. Revise an existing draft with
    `mail_update_draft` rather than deleting and recreating it. Call
    `mail_delete_draft` only when replacing a draft the user has reviewed or
-   when the user explicitly asks to discard one.
+   when the user explicitly asks to discard one. When the user approved
+   specific recipients, pass them as `to` and `cc` instead of relying on the
+   defaults, and report the returned `to`, `cc` and `warning` afterwards.
 
 3. Delete friction — `drive_delete` requires the user to have used an explicit
    "delete" verb in their request. Paraphrases ("remove", "get rid of") do not
@@ -248,7 +250,7 @@ def mail_create_draft(
     paths (`~` is expanded).
 
     Returns dict with keys: `draft_id`, `message_id`, `thread_id`, `to`, `cc`,
-    `subject`, `warning`.
+    `subject`, `warning` (always null for this tool).
     """
     services = _get_services()
     ref = drafts_core.create_draft(
@@ -278,8 +280,9 @@ def mail_create_reply_draft(
     `message_id` is the Gmail id from `mail_list_pending` or `mail_get`. By
     default To is the original Reply-To or sender plus the original To
     recipients, and Cc keeps the original Cc; the Hermes address and the
-    user's own address are dropped. Pass `to` and/or `cc` to override.
-    Unusable header addresses are skipped and listed in `warning`.
+    user's own address are dropped unless nothing else remains. Pass `to`
+    and/or `cc` to override. Unusable header addresses are skipped and listed
+    in `warning`.
 
     Returns dict with keys: `draft_id`, `message_id`, `thread_id`, `to`, `cc`,
     `subject`, `warning`.
@@ -333,7 +336,7 @@ def mail_update_draft(
     added in Gmail is not kept, and an HTML-only draft needs an explicit `body`.
 
     Returns dict with keys: `draft_id`, `message_id`, `thread_id`, `to`, `cc`,
-    `subject`, `warning`.
+    `subject`, `warning` (always null for this tool).
     """
     services = _get_services()
     ref = drafts_core.update_draft(
