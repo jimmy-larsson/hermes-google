@@ -23,7 +23,7 @@ chmod 700 "${CONFIG_DIR}"
 # 3. Config file
 if [[ ! -f "${CONFIG_DIR}/config.toml" ]]; then
     yellow "Writing default config to ${CONFIG_DIR}/config.toml"
-    read -rp "Your personal email (where drafts are delivered): " USER_EMAIL
+    read -rp "Your own email address (dropped from reply-all recipients): " USER_EMAIL
     read -rp "Hermes Google account email: " HERMES_EMAIL
     cat > "${CONFIG_DIR}/config.toml" <<EOF
 [user]
@@ -68,9 +68,10 @@ cat <<EOF
 
 $(green "Setup complete.") Remaining manual steps:
 
-  1. Gmail filters in your PERSONAL Gmail:
+  1. Gmail filter in your PERSONAL Gmail:
      - label:hermes-review → forward to ${HERMES_EMAIL:-<Hermes account>}
-     - from:${HERMES_EMAIL:-<Hermes account>} to:me → apply label "hermes"
+     Hermes never sends mail: reply drafts appear in the Hermes account's
+     Drafts folder, where you review and send them.
 
   2. Share your primary Google Calendar with ${HERMES_EMAIL:-<Hermes account>}
      at "Make changes to events" level. Then uncomment
@@ -78,8 +79,8 @@ $(green "Setup complete.") Remaining manual steps:
 
   3. Share specific Drive files/folders with ${HERMES_EMAIL:-<Hermes account>}.
      Create a top-level "Hermes" folder in your Drive and note its folder ID
-     if you want drive_upload to default there (set [drive].default_parent_folder_id
-     in config.toml).
+     if you want drive_upload and drive_create_folder to default there
+     (set [drive].default_parent_folder_id in config.toml).
 
   4. Restart your Hermes session to pick up the new MCP tools.
 
