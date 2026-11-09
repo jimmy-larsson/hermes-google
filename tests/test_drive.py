@@ -16,6 +16,7 @@ from hermes_google.core.drive import (
     get_file,
     list_folder,
     move_file,
+    rename_file,
     search,
     update_file,
     upload_file,
@@ -202,3 +203,48 @@ def test_search_reports_api_reason(mock_drive_service: MagicMock) -> None:
 
     with pytest.raises(DriveError, match="search failed: HTTP 404 File not found: abc."):
         search(mock_drive_service, query="abc")
+
+
+def test_rename_file_updates_name_and_returns_ref(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {
+        "id": "f1",
+        "name": "SMBC pack 01.pdf",
+        "mimeType": "application/pdf",
+    }
+    mock_drive_service.files().update.return_value = call
+
+    ref = rename_file(mock_drive_service, file_id="f1", new_name="  SMBC pack 01.pdf ")
+    assert ref == FileRef(id="f1", name="SMBC pack 01.pdf", mime_type="application/pdf")
+    _, kwargs = mock_drive_service.files().update.call_args
+    assert kwargs["fileId"] == "f1"
+    assert kwargs["body"] == {"name": "SMBC pack 01.pdf"}
+    assert kwargs["fields"] == "id,name,mimeType"
+
+
+@pytest.mark.parametrize("bad", ["", "   ", ".", "..", "a/b", "a\\b"])
+def test_rename_file_rejects_unsafe_names(mock_drive_service: MagicMock, bad: str) -> None:
+    with pytest.raises(DriveError, match="invalid name"):
+        rename_file(mock_drive_service, file_id="f1", new_name=bad)
+    mock_drive_service.files().update.assert_not_called()
+
+
+def test_rename_file_malformed_response_raises(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"name": "x"}
+    mock_drive_service.files().update.return_value = call
+    with pytest.raises(DriveError, match="unexpected rename response"):
+        rename_file(mock_drive_service, file_id="f1", new_name="x")
+
+
+def test_rename_file_reports_api_reason(mock_drive_service: MagicMock) -> None:
+    resp = httplib2.Response({"status": 403, "reason": "Forbidden"})
+    content = (
+        b'{"error": {"code": 403, "message": "The user does not have sufficient '
+        b'permissions for this file."}}'
+    )
+    call = MagicMock()
+    call.execute.side_effect = HttpError(resp, content, uri="u")
+    mock_drive_service.files().update.return_value = call
+    with pytest.raises(DriveError, match="rename failed: HTTP 403 The user does not have"):
+        rename_file(mock_drive_service, file_id="f1", new_name="x")
