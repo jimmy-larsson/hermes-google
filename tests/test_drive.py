@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import httplib2
 import pytest
+from googleapiclient.errors import HttpError
 
 from hermes_google.core.drive import (
     DriveError,
@@ -189,3 +191,14 @@ def test_search_escapes_single_quotes(mock_drive_service: MagicMock) -> None:
     _, kwargs = mock_drive_service.files().list.call_args
     assert "\\'" in kwargs["q"]
     assert "O\\'Brien" in kwargs["q"]
+
+
+def test_search_reports_api_reason(mock_drive_service: MagicMock) -> None:
+    resp = httplib2.Response({"status": 404, "reason": "Not Found"})
+    content = b'{"error": {"code": 404, "message": "File not found: abc."}}'
+    call = MagicMock()
+    call.execute.side_effect = HttpError(resp, content, uri="u")
+    mock_drive_service.files().list.return_value = call
+
+    with pytest.raises(DriveError, match="search failed: HTTP 404 File not found: abc."):
+        search(mock_drive_service, query="abc")

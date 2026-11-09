@@ -17,7 +17,7 @@ from email.policy import default as default_policy
 from pathlib import Path
 from typing import Any
 
-from hermes_google.core.errors import ServiceError
+from hermes_google.core.errors import ServiceError, api_failure
 from hermes_google.core.forward import unwrap
 
 
@@ -91,7 +91,7 @@ def _list_and_hydrate(
             kwargs["labelIds"] = label_ids
         resp = service.users().messages().list(**kwargs).execute()
     except Exception as exc:  # noqa: BLE001 - Google client raises HttpError; keep broad for tests
-        raise MailError("failed to list messages") from exc
+        raise MailError(api_failure("list messages", exc)) from exc
 
     ids = [m["id"] for m in resp.get("messages", [])]
     out: list[PendingMessage] = []
@@ -140,7 +140,7 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
     try:
         resp = service.users().messages().get(userId="me", id=message_id, format="raw").execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError(f"failed to fetch message {message_id}") from exc
+        raise MailError(api_failure(f"fetch message {message_id}", exc)) from exc
 
     try:
         raw_field = resp["raw"]
@@ -188,7 +188,7 @@ def send_draft(
         raw = _build_raw(to, subject, body, in_reply_to=in_reply_to)
         resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError("failed to send draft") from exc
+        raise MailError(api_failure("send draft", exc)) from exc
     try:
         return resp["id"]
     except KeyError as exc:
@@ -201,7 +201,7 @@ def mark_read(service: Any, *, message_id: str) -> None:
             userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError("failed to mark read") from exc
+        raise MailError(api_failure("mark read", exc)) from exc
 
 
 def archive(service: Any, *, message_id: str) -> None:
@@ -210,4 +210,4 @@ def archive(service: Any, *, message_id: str) -> None:
             userId="me", id=message_id, body={"removeLabelIds": ["INBOX"]}
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError("failed to archive") from exc
+        raise MailError(api_failure("archive", exc)) from exc
