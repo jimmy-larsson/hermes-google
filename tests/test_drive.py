@@ -10,8 +10,10 @@ import pytest
 from googleapiclient.errors import HttpError
 
 from hermes_google.core.drive import (
+    FOLDER_MIME_TYPE,
     DriveError,
     FileRef,
+    create_folder,
     delete_file,
     get_file,
     list_folder,
@@ -248,3 +250,43 @@ def test_rename_file_reports_api_reason(mock_drive_service: MagicMock) -> None:
     mock_drive_service.files().update.return_value = call
     with pytest.raises(DriveError, match="rename failed: HTTP 403 The user does not have"):
         rename_file(mock_drive_service, file_id="f1", new_name="x")
+
+
+def test_create_folder_sends_folder_mime_type_and_parent(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"id": "d1", "name": "SMBC pack", "mimeType": FOLDER_MIME_TYPE}
+    mock_drive_service.files().create.return_value = call
+
+    ref = create_folder(mock_drive_service, name=" SMBC pack ", parent_folder_id="PARENT")
+    assert ref == FileRef(id="d1", name="SMBC pack", mime_type=FOLDER_MIME_TYPE)
+    _, kwargs = mock_drive_service.files().create.call_args
+    assert kwargs["body"] == {
+        "name": "SMBC pack",
+        "mimeType": FOLDER_MIME_TYPE,
+        "parents": ["PARENT"],
+    }
+    assert kwargs["fields"] == "id,name,mimeType"
+
+
+def test_create_folder_without_parent_omits_parents(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"id": "d1", "name": "x", "mimeType": FOLDER_MIME_TYPE}
+    mock_drive_service.files().create.return_value = call
+
+    create_folder(mock_drive_service, name="x")
+    _, kwargs = mock_drive_service.files().create.call_args
+    assert "parents" not in kwargs["body"]
+
+
+def test_create_folder_rejects_unsafe_name(mock_drive_service: MagicMock) -> None:
+    with pytest.raises(DriveError, match="invalid name"):
+        create_folder(mock_drive_service, name="a/b")
+    mock_drive_service.files().create.assert_not_called()
+
+
+def test_create_folder_malformed_response_raises(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"name": "x"}
+    mock_drive_service.files().create.return_value = call
+    with pytest.raises(DriveError, match="unexpected create response"):
+        create_folder(mock_drive_service, name="x")
