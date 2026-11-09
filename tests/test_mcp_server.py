@@ -515,7 +515,7 @@ def test_mail_create_draft_tool_parses_recipients_and_paths(mocker, tmp_path) ->
     _, kwargs = spy.call_args
     assert kwargs["to"] == [Recipient("", "a@x.com")]
     assert kwargs["cc"] == [Recipient("Larsson, Jimmy", "j@x.com")]
-    assert kwargs["attachments"] == [Path("~/file.pdf").expanduser()]
+    assert kwargs["attachments"] == [Path("~/file.pdf").expanduser().absolute()]
 
 
 def test_mail_create_reply_draft_uses_config_emails_and_overrides(mocker, tmp_path) -> None:
@@ -772,3 +772,13 @@ def test_mail_create_draft_raises_tool_error_on_service_error(mocker) -> None:
     )
     with pytest.raises(ToolError, match="create draft failed"):
         mcp_server.mail_create_draft(to=["a@x.com"], subject="s", body="b")
+
+
+def test_paths_expands_home_and_makes_absolute() -> None:
+    from hermes_google import mcp_server
+
+    paths = mcp_server._paths(["~unknownuser-xyz/x.pdf", "rel/y.pdf"])
+    assert paths is not None
+    assert all(p.is_absolute() for p in paths)
+    assert str(paths[0]).endswith("~unknownuser-xyz/x.pdf")
+    assert mcp_server._paths(None) is None

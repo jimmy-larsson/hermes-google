@@ -10,6 +10,7 @@ Tool functions are thin wrappers around `hermes_google.core.*` that:
 from __future__ import annotations
 
 import functools
+import os
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Annotated, Any
@@ -227,7 +228,7 @@ def mail_get(message_id: str) -> dict[str, Any]:
 def _paths(attachments: list[str] | None) -> list[Path] | None:
     if attachments is None:
         return None
-    return [Path(p).expanduser() for p in attachments]
+    return [Path(os.path.expanduser(p)).absolute() for p in attachments]
 
 
 @mcp.tool(annotations={"destructiveHint": False, "idempotentHint": False, "openWorldHint": False})
@@ -243,7 +244,8 @@ def mail_create_draft(
     reviews and sends it from Gmail. Requires user confirmation before calling.
 
     Recipients are `addr` or `Name <addr>` strings with ASCII addresses; quote
-    a display name that contains a comma. `attachments` are local file paths.
+    a display name that contains a comma. `attachments` are absolute local file
+    paths (`~` is expanded).
 
     Returns dict with keys: `draft_id`, `message_id`, `thread_id`, `to`, `cc`,
     `subject`, `warning`.
