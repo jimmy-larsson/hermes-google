@@ -12,6 +12,7 @@ import binascii
 import mimetypes
 import re
 from dataclasses import dataclass
+from email import errors as email_errors
 from email import message_from_bytes
 from email.headerregistry import Address
 from email.message import EmailMessage, Message
@@ -37,15 +38,26 @@ class Recipient:
 
 def _parse_header_addresses(value: str) -> tuple[list[Recipient], list[str]]:
     """Parse an address header value into (usable recipients, rejected entries)."""
-    header = default_policy.header_factory("To", value)
+    try:
+        header = default_policy.header_factory("To", value)
+    except (ValueError, IndexError):
+        return [], [value]
+    if any(isinstance(defect, email_errors.InvalidHeaderDefect) for defect in header.defects):
+        return [], [value]
     good: list[Recipient] = []
     bad: list[str] = []
     for address in header.addresses:
         spec = address.addr_spec
-        if spec.isascii() and _ADDR_SPEC_RE.fullmatch(spec):
-            good.append(Recipient(name=address.display_name, addr=spec))
-        else:
-            bad.append(str(address))
+        shown = f"{address.display_name} <{spec}>".strip()
+        if not (spec.isascii() and _ADDR_SPEC_RE.fullmatch(spec)):
+            bad.append(shown)
+            continue
+        try:
+            str(Address(display_name=address.display_name, addr_spec=spec))
+        except (ValueError, IndexError):
+            bad.append(shown)
+            continue
+        good.append(Recipient(name=address.display_name, addr=spec))
     return good, bad
 
 

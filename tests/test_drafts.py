@@ -535,3 +535,32 @@ def test_build_draft_raw_unreadable_attachment_raises(tmp_path: Path, mocker) ->
     mocker.patch.object(Path, "read_bytes", side_effect=PermissionError("denied"))
     with pytest.raises(MailError, match="attachment unreadable"):
         build_draft_raw(to=[Recipient("", "a@x.com")], subject="s", body="b", attachments=[pdf])
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "a@x.com b@x.com",
+        '"Larsson <j@x.com>',
+        "Foo\nBcc: evil@x.com <a@x.com>",
+        "<a@x.com> <b@x.com>",
+        ".a@x.com",
+        "a..b@x.com",
+    ],
+)
+def test_parse_recipients_rejects_malformed_entries(bad: str) -> None:
+    with pytest.raises(MailError, match="invalid recipient"):
+        parse_recipients([bad])
+
+
+def test_reply_context_treats_malformed_header_as_warning() -> None:
+    ctx = _ctx(original_cc="a@x.com b@x.com")
+    assert [r.addr for r in ctx.to] == ["alice@example.com"]
+    assert ctx.cc == []
+    assert ctx.warning is not None
+    assert "a@x.com b@x.com" in ctx.warning
+
+
+def test_reply_context_multi_address_reply_to_keeps_all() -> None:
+    ctx = _ctx(original_reply_to="r1@x.com, r2@x.com")
+    assert [r.addr for r in ctx.to] == ["r1@x.com", "r2@x.com"]
