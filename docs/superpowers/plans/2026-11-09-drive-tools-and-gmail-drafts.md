@@ -547,7 +547,7 @@ Expected: inventory, idempotent, instructions and the new test FAIL.
 In `src/hermes_google/mcp_server.py`, in `INSTRUCTIONS` policy 4, change the list to:
 
 ```
-4. Confirmation — all write operations (`cal_create_event`, `cal_update_event`,
+4. Confirmation: all write operations (`cal_create_event`, `cal_update_event`,
    `cal_delete_event`, `drive_upload`, `drive_update`, `drive_move`,
    `drive_rename`, `drive_delete`) require the user to confirm the proposed
    action in chat before you invoke the tool.
@@ -733,7 +733,7 @@ Expected: inventory, instructions and the two new tests FAIL.
 In `INSTRUCTIONS` policy 4, insert `drive_create_folder` after `drive_rename`:
 
 ```
-4. Confirmation — all write operations (`cal_create_event`, `cal_update_event`,
+4. Confirmation: all write operations (`cal_create_event`, `cal_update_event`,
    `cal_delete_event`, `drive_upload`, `drive_update`, `drive_move`,
    `drive_rename`, `drive_create_folder`, `drive_delete`) require the user to
    confirm the proposed action in chat before you invoke the tool.
@@ -2309,11 +2309,11 @@ In `src/hermes_google/mcp_server.py`:
 3. Replace policies 1, 2 and 4 in `INSTRUCTIONS`:
 
 ```
-1. Archive policy — never call `mail_archive` without explicit user confirmation.
+1. Archive policy: never call `mail_archive` without explicit user confirmation.
    Ask after creating a draft ("want me to archive my copy?") AND when the user
    mentions they've sent the reply. No silent auto-archive.
 
-2. No send capability — this server creates drafts in the Hermes account's
+2. No send capability: this server creates drafts in the Hermes account's
    Gmail only (`mail_create_draft`, `mail_create_reply_draft`); the user
    reviews and sends them from Gmail. Present the draft content (recipients,
    subject and body) in chat before creating it. Revise an existing draft with
@@ -2323,7 +2323,7 @@ In `src/hermes_google/mcp_server.py`:
 ```
 
 ```
-4. Confirmation — all write operations (`mail_create_draft`,
+4. Confirmation: all write operations (`mail_create_draft`,
    `mail_create_reply_draft`, `mail_update_draft`, `mail_delete_draft`,
    `cal_create_event`, `cal_update_event`, `cal_delete_event`, `drive_upload`,
    `drive_update`, `drive_move`, `drive_rename`, `drive_create_folder`,
@@ -2550,7 +2550,7 @@ redirect URL back.
 ```markdown
 1. For each sender you want Hermes to handle: create a filter that **both**
    labels the email (e.g. `hermes-review`) **and** forwards it to
-   `hermes-yourname@gmail.com` — in a single filter
+   `hermes-yourname@gmail.com`, in a single filter
 2. Forwarding a message to the Hermes account by hand works too
 
 Hermes never sends mail. Reply drafts are written to the **Hermes account's
