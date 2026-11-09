@@ -37,6 +37,8 @@ class Recipient:
         return str(Address(display_name=self.name, addr_spec=self.addr))
 
 
+# Relies on the parse-tree API behind AddressHeader (addresses, all_mailboxes, defects):
+# a defect on the list means a broken list, a defect on one token means one bad address.
 def _parse_header_addresses(value: str) -> tuple[list[Recipient], list[str]]:
     """Parse an address header value into (usable recipients, rejected entries)."""
     try:
