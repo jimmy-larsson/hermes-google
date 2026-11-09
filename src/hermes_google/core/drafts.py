@@ -15,8 +15,10 @@ from email.headerregistry import Address
 from email.message import EmailMessage, Message
 from email.policy import default as default_policy
 from pathlib import Path
+from typing import Any
 
-from hermes_google.core.mail import MailError
+from hermes_google.core.errors import api_failure
+from hermes_google.core.mail import MailError, MessageDetail
 
 _ADDR_SPEC_RE = re.compile(r"[^\s@]+@[^\s@]+")
 
@@ -99,3 +101,146 @@ def build_draft_raw(
             filename=part.get_filename() or "attachment",
         )
     return base64.urlsafe_b64encode(msg.as_bytes()).decode()
+
+
+@dataclass(frozen=True)
+class DraftRef:
+    draft_id: str
+    message_id: str
+    thread_id: str | None
+    to: list[str]
+    cc: list[str]
+    subject: str
+    warning: str | None = None
+
+
+@dataclass(frozen=True)
+class ReplyContext:
+    to: list[Recipient]
+    cc: list[Recipient]
+    subject: str
+    in_reply_to: str | None
+    references: str | None
+    thread_id: str | None
+    warning: str | None
+
+
+def _draft_ref(
+    resp: dict[str, Any], *, to: list[Recipient], cc: list[Recipient], subject: str
+) -> DraftRef:
+    try:
+        message = resp["message"]
+        return DraftRef(
+            draft_id=resp["id"],
+            message_id=message["id"],
+            thread_id=message.get("threadId"),
+            to=[r.render() for r in to],
+            cc=[r.render() for r in cc],
+            subject=subject,
+        )
+    except (KeyError, TypeError) as exc:
+        raise MailError("unexpected draft response format") from exc
+
+
+def _message_body(raw: str, thread_id: str | None) -> dict[str, Any]:
+    message: dict[str, Any] = {"raw": raw}
+    if thread_id:
+        message["threadId"] = thread_id
+    return {"message": message}
+
+
+def create_draft(
+    service: Any,
+    *,
+    to: list[Recipient],
+    subject: str,
+    body: str,
+    cc: list[Recipient] | None = None,
+    attachments: list[Path] | None = None,
+    in_reply_to: str | None = None,
+    references: str | None = None,
+    thread_id: str | None = None,
+) -> DraftRef:
+    raw = build_draft_raw(
+        to=to,
+        subject=subject,
+        body=body,
+        cc=cc,
+        attachments=attachments,
+        in_reply_to=in_reply_to,
+        references=references,
+    )
+    try:
+        resp = (
+            service.users()
+            .drafts()
+            .create(userId="me", body=_message_body(raw, thread_id))
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise MailError(api_failure("create draft", exc)) from exc
+    return _draft_ref(resp, to=to, cc=cc or [], subject=subject)
+
+
+def delete_draft(service: Any, *, draft_id: str) -> None:
+    try:
+        service.users().drafts().delete(userId="me", id=draft_id).execute()
+    except Exception as exc:  # noqa: BLE001
+        raise MailError(api_failure(f"delete draft {draft_id}", exc)) from exc
+
+
+def _reply_subject(subject: str) -> str:
+    return subject if subject.lower().startswith("re:") else f"Re: {subject}"
+
+
+def _dedupe(recipients: list[Recipient], *, exclude: set[str]) -> list[Recipient]:
+    seen: set[str] = set()
+    out: list[Recipient] = []
+    for recipient in recipients:
+        key = recipient.addr.lower()
+        if key in exclude or key in seen:
+            continue
+        seen.add(key)
+        out.append(recipient)
+    return out
+
+
+def reply_context(detail: MessageDetail, *, user_email: str, hermes_email: str) -> ReplyContext:
+    rejected: list[str] = []
+
+    def parse(value: str | None) -> list[Recipient]:
+        if not value:
+            return []
+        good, bad = _parse_header_addresses(str(value))
+        rejected.extend(bad)
+        return good
+
+    origin = parse(detail.original_reply_to) or parse(detail.original_sender)
+    own = {user_email.lower(), hermes_email.lower()}
+    to = _dedupe(origin + parse(detail.original_to), exclude=own)
+    if not to:
+        to = _dedupe(origin, exclude=set())
+    if not to:
+        raise MailError("no usable reply recipient; pass to explicitly")
+    cc = _dedupe(parse(detail.original_cc), exclude=own | {r.addr.lower() for r in to})
+
+    if detail.rfc_message_id:
+        parent: str | None = detail.rfc_message_id
+        chain = detail.references or detail.in_reply_to
+        references: str | None = f"{chain} {parent}" if chain else parent
+        thread_id: str | None = detail.thread_id or None
+    else:
+        parent = detail.in_reply_to
+        references = detail.references or parent
+        thread_id = None
+
+    warning = f"ignored unusable addresses: {', '.join(rejected)}" if rejected else None
+    return ReplyContext(
+        to=to,
+        cc=cc,
+        subject=_reply_subject(detail.original_subject),
+        in_reply_to=parent,
+        references=references,
+        thread_id=thread_id,
+        warning=warning,
+    )

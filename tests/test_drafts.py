@@ -7,15 +7,22 @@ from email import message_from_bytes
 from email.message import EmailMessage
 from email.policy import default as default_policy
 from pathlib import Path
+from unittest.mock import MagicMock
 
+import httplib2
 import pytest
+from googleapiclient.errors import HttpError
 
 from hermes_google.core.drafts import (
+    DraftRef,
     Recipient,
     build_draft_raw,
+    create_draft,
+    delete_draft,
     parse_recipients,
+    reply_context,
 )
-from hermes_google.core.mail import MailError
+from hermes_google.core.mail import MailError, MessageDetail
 
 
 def _decode(raw_b64: str) -> EmailMessage:
@@ -164,3 +171,196 @@ def test_build_draft_raw_carries_existing_parts(tmp_path: Path) -> None:
         ("a.txt", b"one")
     ]
     assert second.get_body(preferencelist=("plain",)).get_content() == "new\n"
+
+
+USER = "jimmy@example.com"
+HERMES = "hermes@example.com"
+
+
+def _detail(**overrides) -> MessageDetail:
+    base = dict(
+        id="m1",
+        thread_id="t1",
+        sender="Alice <alice@example.com>",
+        original_sender="Alice <alice@example.com>",
+        original_subject="Hello",
+        original_body="...",
+        in_reply_to=None,
+        forwarding_note=None,
+        attachment_paths=[],
+    )
+    base.update(overrides)
+    return MessageDetail(**base)
+
+
+def _ctx(**overrides):
+    return reply_context(_detail(**overrides), user_email=USER, hermes_email=HERMES)
+
+
+def test_reply_context_reply_all_drops_own_addresses_and_duplicates() -> None:
+    ctx = _ctx(
+        original_to=(
+            "Jimmy <jimmy@example.com>, Hermes <hermes@example.com>, Carol <carol@example.com>"
+        ),
+        original_cc="Dave <dave@example.com>, carol@example.com, JIMMY@example.com",
+        rfc_message_id="<orig@example.com>",
+    )
+    assert [r.addr for r in ctx.to] == ["alice@example.com", "carol@example.com"]
+    assert [r.addr for r in ctx.cc] == ["dave@example.com"]
+    assert ctx.warning is None
+
+
+def test_reply_context_prefers_reply_to_over_sender() -> None:
+    ctx = _ctx(original_reply_to="Alice Work <alice@work.example>")
+    assert [r.addr for r in ctx.to] == ["alice@work.example"]
+
+
+def test_reply_context_prefixes_re_once() -> None:
+    assert _ctx(original_subject="Hello").subject == "Re: Hello"
+    assert _ctx(original_subject="RE: Hello").subject == "RE: Hello"
+    assert _ctx(original_subject="re: Hello").subject == "re: Hello"
+
+
+def test_reply_context_threads_intact_headers_with_thread_id() -> None:
+    ctx = _ctx(
+        rfc_message_id="<orig@example.com>",
+        references="<root@example.com>",
+        in_reply_to="<root@example.com>",
+    )
+    assert ctx.in_reply_to == "<orig@example.com>"
+    assert ctx.references == "<root@example.com> <orig@example.com>"
+    assert ctx.thread_id == "t1"
+
+
+def test_reply_context_intact_headers_without_references_use_in_reply_to() -> None:
+    ctx = _ctx(rfc_message_id="<orig@x>", in_reply_to="<prev@x>")
+    assert ctx.references == "<prev@x> <orig@x>"
+
+
+def test_reply_context_intact_thread_starter_references_only_itself() -> None:
+    ctx = _ctx(rfc_message_id="<orig@x>")
+    assert ctx.in_reply_to == "<orig@x>"
+    assert ctx.references == "<orig@x>"
+
+
+def test_reply_context_manual_forward_uses_wrapper_headers_without_thread_id() -> None:
+    ctx = _ctx(
+        rfc_message_id=None,
+        in_reply_to="<orig@acme.example>",
+        references="<root@acme.example> <orig@acme.example>",
+        original_sender="Acme <billing@acme.example>",
+    )
+    assert [r.addr for r in ctx.to] == ["billing@acme.example"]
+    assert ctx.in_reply_to == "<orig@acme.example>"
+    assert ctx.references == "<root@acme.example> <orig@acme.example>"
+    assert ctx.thread_id is None
+
+
+def test_reply_context_manual_forward_without_wrapper_headers_has_no_threading() -> None:
+    ctx = _ctx(rfc_message_id=None)
+    assert ctx.in_reply_to is None
+    assert ctx.references is None
+    assert ctx.thread_id is None
+
+
+def test_reply_context_falls_back_to_sender_when_everyone_is_filtered() -> None:
+    ctx = _ctx(original_sender="Jimmy <jimmy@example.com>", original_to="hermes@example.com")
+    assert [r.addr for r in ctx.to] == ["jimmy@example.com"]
+    assert ctx.cc == []
+
+
+def test_reply_context_drops_bad_header_entries_into_warning() -> None:
+    ctx = _ctx(original_to="Jörg <jörg@example.com>, Carol <carol@example.com>")
+    assert [r.addr for r in ctx.to] == ["alice@example.com", "carol@example.com"]
+    assert ctx.warning is not None
+    assert "jörg@example.com" in ctx.warning
+
+
+def test_reply_context_fails_when_no_recipient_is_usable() -> None:
+    with pytest.raises(MailError, match="no usable reply recipient"):
+        _ctx(original_sender="Jörg <jörg@example.com>")
+
+
+def test_reply_context_keeps_comma_names_quoted_for_rendering() -> None:
+    ctx = _ctx(original_sender='"Larsson, Jimmy" <jl@example.com>')
+    rendered = ctx.to[0].render()
+    assert rendered == '"Larsson, Jimmy" <jl@example.com>'
+    assert parse_recipients([rendered]) == [Recipient("Larsson, Jimmy", "jl@example.com")]
+
+
+def test_create_draft_posts_raw_and_thread_id(mock_gmail_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {
+        "id": "d1",
+        "message": {"id": "m9", "threadId": "t1", "labelIds": ["DRAFT"]},
+    }
+    mock_gmail_service.users().drafts().create.return_value = call
+
+    ref = create_draft(
+        mock_gmail_service,
+        to=[Recipient("Alice", "alice@example.com")],
+        subject="Re: Hello",
+        body="Hi",
+        thread_id="t1",
+    )
+    assert ref == DraftRef(
+        draft_id="d1",
+        message_id="m9",
+        thread_id="t1",
+        to=["Alice <alice@example.com>"],
+        cc=[],
+        subject="Re: Hello",
+        warning=None,
+    )
+    _, kwargs = mock_gmail_service.users().drafts().create.call_args
+    assert kwargs["userId"] == "me"
+    assert kwargs["body"]["message"]["threadId"] == "t1"
+    assert _decode(kwargs["body"]["message"]["raw"])["Subject"] == "Re: Hello"
+
+
+def test_create_draft_omits_thread_id_when_none(mock_gmail_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"id": "d1", "message": {"id": "m9", "threadId": "t-new"}}
+    mock_gmail_service.users().drafts().create.return_value = call
+
+    ref = create_draft(mock_gmail_service, to=[Recipient("", "a@x.com")], subject="s", body="b")
+    assert ref.thread_id == "t-new"
+    _, kwargs = mock_gmail_service.users().drafts().create.call_args
+    assert "threadId" not in kwargs["body"]["message"]
+
+
+def test_create_draft_malformed_response_raises(mock_gmail_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"id": "d1"}
+    mock_gmail_service.users().drafts().create.return_value = call
+    with pytest.raises(MailError, match="unexpected draft response"):
+        create_draft(mock_gmail_service, to=[Recipient("", "a@x.com")], subject="s", body="b")
+
+
+def test_create_draft_reports_api_reason(mock_gmail_service: MagicMock) -> None:
+    resp = httplib2.Response({"status": 403, "reason": "Forbidden"})
+    content = b'{"error": {"code": 403, "message": "Insufficient Permission"}}'
+    call = MagicMock()
+    call.execute.side_effect = HttpError(resp, content, uri="u")
+    mock_gmail_service.users().drafts().create.return_value = call
+    with pytest.raises(MailError, match="create draft failed: HTTP 403 Insufficient Permission"):
+        create_draft(mock_gmail_service, to=[Recipient("", "a@x.com")], subject="s", body="b")
+
+
+def test_delete_draft_calls_gmail(mock_gmail_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = ""
+    mock_gmail_service.users().drafts().delete.return_value = call
+    delete_draft(mock_gmail_service, draft_id="d1")
+    _, kwargs = mock_gmail_service.users().drafts().delete.call_args
+    assert kwargs == {"userId": "me", "id": "d1"}
+
+
+def test_delete_draft_reports_api_reason(mock_gmail_service: MagicMock) -> None:
+    resp = httplib2.Response({"status": 404, "reason": "Not Found"})
+    content = b'{"error": {"code": 404, "message": "Requested entity was not found."}}'
+    call = MagicMock()
+    call.execute.side_effect = HttpError(resp, content, uri="u")
+    mock_gmail_service.users().drafts().delete.return_value = call
+    with pytest.raises(MailError, match="delete draft d1 failed: HTTP 404"):
+        delete_draft(mock_gmail_service, draft_id="d1")
