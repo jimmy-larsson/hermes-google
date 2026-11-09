@@ -275,7 +275,7 @@ class _StoredDraft:
     to: list[Recipient]
     cc: list[Recipient]
     subject: str
-    body: str
+    body: str | None
     attachment_parts: list[Message]
     in_reply_to: str | None
     references: str | None
@@ -297,12 +297,12 @@ def _load_stored_draft(service: Any, draft_id: str) -> _StoredDraft:
     to, _ = _parse_header_addresses(str(parsed.get("To", "")))
     cc, _ = _parse_header_addresses(str(parsed.get("Cc", "")))
     body_part = parsed.get_body(preferencelist=("plain",))
-    body = body_part.get_content() if body_part is not None else ""
+    body = "\n".join(body_part.get_content().splitlines()) if body_part is not None else None
     return _StoredDraft(
         to=to,
         cc=cc,
         subject=str(parsed.get("Subject", "")),
-        body=body.rstrip("\n"),
+        body=body,
         attachment_parts=list(parsed.iter_attachments()),
         in_reply_to=normalize_ids(parsed.get("In-Reply-To")),
         references=normalize_ids(parsed.get("References")),
@@ -327,6 +327,8 @@ def update_draft(
     new_cc = stored.cc if cc is None else cc
     new_subject = stored.subject if subject is None else subject
     new_body = stored.body if body is None else body
+    if new_body is None:
+        raise MailError("stored draft has no plain-text body; pass body explicitly")
     if attachments is None:
         parts: list[Message] = stored.attachment_parts
         files: list[Path] | None = None
