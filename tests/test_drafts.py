@@ -625,3 +625,9 @@ def test_update_draft_empty_to_is_rejected(mock_gmail_service: MagicMock, tmp_pa
     with pytest.raises(MailError, match="at least one To recipient"):
         update_draft(mock_gmail_service, draft_id="d1", to=[])
     mock_gmail_service.users().drafts().update.assert_not_called()
+
+
+def test_reply_context_trims_subject_before_prefixing() -> None:
+    assert _ctx(original_subject="  Hello ").subject == "Re: Hello"
+    assert _ctx(original_subject="  RE: Hello").subject == "RE: Hello"
+    assert _ctx(original_subject="").subject == "Re:"

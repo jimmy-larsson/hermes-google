@@ -214,7 +214,10 @@ def delete_draft(service: Any, *, draft_id: str) -> None:
 
 
 def _reply_subject(subject: str) -> str:
-    return subject if subject.lower().startswith("re:") else f"Re: {subject}"
+    cleaned = subject.strip()
+    if cleaned.lower().startswith("re:"):
+        return cleaned
+    return f"Re: {cleaned}".rstrip()
 
 
 def _dedupe(recipients: list[Recipient], *, exclude: set[str]) -> list[Recipient]:
