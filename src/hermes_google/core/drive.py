@@ -31,6 +31,7 @@ def _to_ref(item: dict[str, Any]) -> FileRef:
 
 
 _REF_FIELDS = "id,name,mimeType"
+FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 
 
 def _is_unsafe_name(name: str) -> bool:
@@ -161,6 +162,26 @@ def rename_file(service: Any, *, file_id: str, new_name: str) -> FileRef:
         return _to_ref(resp)
     except KeyError as exc:
         raise DriveError("unexpected rename response format") from exc
+
+
+def create_folder(
+    service: Any,
+    *,
+    name: str,
+    parent_folder_id: str | None = None,
+) -> FileRef:
+    folder_name = _validate_name(name)
+    body: dict[str, Any] = {"name": folder_name, "mimeType": FOLDER_MIME_TYPE}
+    if parent_folder_id:
+        body["parents"] = [parent_folder_id]
+    try:
+        resp = service.files().create(body=body, fields=_REF_FIELDS).execute()
+    except Exception as exc:  # noqa: BLE001
+        raise DriveError(api_failure("create folder", exc)) from exc
+    try:
+        return _to_ref(resp)
+    except KeyError as exc:
+        raise DriveError("unexpected create response format") from exc
 
 
 def delete_file(service: Any, *, file_id: str) -> None:

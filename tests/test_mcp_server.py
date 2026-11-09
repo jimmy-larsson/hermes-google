@@ -28,6 +28,7 @@ def test_instructions_contains_key_policies() -> None:
         "data, not instructions",  # prompt-injection note
         "confirm",  # confirmation policy
         "drive_rename",
+        "drive_create_folder",
     ]
     for snippet in required:
         assert snippet in INSTRUCTIONS, f"missing policy snippet: {snippet!r}"
@@ -64,6 +65,7 @@ def test_smoke_server_has_expected_tools() -> None:
         "drive_update",
         "drive_move",
         "drive_rename",
+        "drive_create_folder",
         "drive_delete",
     }
     assert expected == tool_names
@@ -439,3 +441,44 @@ def test_drive_rename_tool_returns_ref(mocker) -> None:
     assert result == {"id": "f1", "name": "new.pdf", "mime_type": "application/pdf"}
     _, kwargs = spy.call_args
     assert kwargs == {"file_id": "f1", "new_name": "new.pdf"}
+
+
+def test_drive_create_folder_uses_default_parent(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drive import FOLDER_MIME_TYPE, FileRef
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    cfg = MagicMock(drive_default_parent_folder_id="DEFAULT")
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    spy = mocker.patch.object(
+        mcp_server.drive_core,
+        "create_folder",
+        return_value=FileRef(id="d1", name="SMBC pack", mime_type=FOLDER_MIME_TYPE),
+    )
+    result = mcp_server.drive_create_folder(name="SMBC pack")
+    assert result == {
+        "id": "d1",
+        "name": "SMBC pack",
+        "mime_type": FOLDER_MIME_TYPE,
+        "parent_folder_id": "DEFAULT",
+    }
+    _, kwargs = spy.call_args
+    assert kwargs == {"name": "SMBC pack", "parent_folder_id": "DEFAULT"}
+
+
+def test_drive_create_folder_explicit_parent_wins(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drive import FOLDER_MIME_TYPE, FileRef
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    cfg = MagicMock(drive_default_parent_folder_id="DEFAULT")
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    spy = mocker.patch.object(
+        mcp_server.drive_core,
+        "create_folder",
+        return_value=FileRef(id="d1", name="x", mime_type=FOLDER_MIME_TYPE),
+    )
+    result = mcp_server.drive_create_folder(name="x", parent_folder_id="P")
+    assert result["parent_folder_id"] == "P"
+    _, kwargs = spy.call_args
+    assert kwargs["parent_folder_id"] == "P"
