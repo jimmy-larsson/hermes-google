@@ -8,9 +8,11 @@ update and delete.
 from __future__ import annotations
 
 import base64
+import binascii
 import mimetypes
 import re
 from dataclasses import dataclass
+from email import message_from_bytes
 from email.headerregistry import Address
 from email.message import EmailMessage, Message
 from email.policy import default as default_policy
@@ -18,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from hermes_google.core.errors import api_failure
+from hermes_google.core.forward import normalize_ids
 from hermes_google.core.mail import MailError, MessageDetail
 
 _ADDR_SPEC_RE = re.compile(r"[^\s@]+@[^\s@]+")
@@ -244,3 +247,88 @@ def reply_context(detail: MessageDetail, *, user_email: str, hermes_email: str) 
         thread_id=thread_id,
         warning=warning,
     )
+
+
+@dataclass(frozen=True)
+class _StoredDraft:
+    to: list[Recipient]
+    cc: list[Recipient]
+    subject: str
+    body: str
+    attachment_parts: list[Message]
+    in_reply_to: str | None
+    references: str | None
+    thread_id: str | None
+
+
+def _load_stored_draft(service: Any, draft_id: str) -> _StoredDraft:
+    try:
+        resp = service.users().drafts().get(userId="me", id=draft_id, format="raw").execute()
+    except Exception as exc:  # noqa: BLE001
+        raise MailError(api_failure(f"fetch draft {draft_id}", exc)) from exc
+    try:
+        message = resp["message"]
+        raw_bytes = base64.urlsafe_b64decode(message["raw"])
+        thread_id = message.get("threadId")
+    except (KeyError, TypeError, ValueError, binascii.Error) as exc:
+        raise MailError("unexpected draft response format") from exc
+    parsed = message_from_bytes(raw_bytes, policy=default_policy)
+    to, _ = _parse_header_addresses(str(parsed.get("To", "")))
+    cc, _ = _parse_header_addresses(str(parsed.get("Cc", "")))
+    body_part = parsed.get_body(preferencelist=("plain",))
+    body = body_part.get_content() if body_part is not None else ""
+    return _StoredDraft(
+        to=to,
+        cc=cc,
+        subject=str(parsed.get("Subject", "")),
+        body=body.rstrip("\n"),
+        attachment_parts=list(parsed.iter_attachments()),
+        in_reply_to=normalize_ids(parsed.get("In-Reply-To")),
+        references=normalize_ids(parsed.get("References")),
+        thread_id=thread_id,
+    )
+
+
+def update_draft(
+    service: Any,
+    *,
+    draft_id: str,
+    to: list[Recipient] | None = None,
+    cc: list[Recipient] | None = None,
+    subject: str | None = None,
+    body: str | None = None,
+    attachments: list[Path] | None = None,
+) -> DraftRef:
+    if to is None and cc is None and subject is None and body is None and attachments is None:
+        raise MailError("nothing to update")
+    stored = _load_stored_draft(service, draft_id)
+    new_to = stored.to if to is None else to
+    new_cc = stored.cc if cc is None else cc
+    new_subject = stored.subject if subject is None else subject
+    new_body = stored.body if body is None else body
+    if attachments is None:
+        parts: list[Message] = stored.attachment_parts
+        files: list[Path] | None = None
+    else:
+        parts = []
+        files = attachments
+    raw = build_draft_raw(
+        to=new_to,
+        subject=new_subject,
+        body=new_body,
+        cc=new_cc or None,
+        attachments=files,
+        attachment_parts=parts,
+        in_reply_to=stored.in_reply_to,
+        references=stored.references,
+    )
+    try:
+        resp = (
+            service.users()
+            .drafts()
+            .update(userId="me", id=draft_id, body=_message_body(raw, stored.thread_id))
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise MailError(api_failure(f"update draft {draft_id}", exc)) from exc
+    return _draft_ref(resp, to=new_to, cc=new_cc, subject=new_subject)
