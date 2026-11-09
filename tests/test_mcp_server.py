@@ -582,6 +582,8 @@ def test_mail_create_reply_draft_uses_config_emails_and_overrides(mocker, tmp_pa
     assert kwargs["thread_id"] == "t1"
     assert result["draft_id"] == "d1"
     assert result["warning"] == "ignored unusable addresses: x"
+    _, get_kwargs = mcp_server.mail_core.get_message.call_args
+    assert get_kwargs["cache_dir"] is None
 
 
 def test_mail_create_reply_draft_defaults_to_context_recipients(mocker, tmp_path) -> None:
