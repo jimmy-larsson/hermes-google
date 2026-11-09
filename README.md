@@ -5,7 +5,9 @@ access to Gmail, Google Calendar, and Google Drive through a dedicated Hermes
 Google account — without granting access to your personal Google account.
 
 See [`docs/superpowers/specs/2026-04-23-hermes-google-design.md`](docs/superpowers/specs/2026-04-23-hermes-google-design.md)
-for the full design.
+for the original design and
+[`docs/superpowers/specs/2026-11-09-drive-tools-and-gmail-drafts-design.md`](docs/superpowers/specs/2026-11-09-drive-tools-and-gmail-drafts-design.md)
+for the 0.4.0 changes (full Drive scope, drafts-only Gmail).
 
 ## Quick Start
 
@@ -42,10 +44,40 @@ cd hermes-google
 The setup script creates the config, runs the OAuth flow (saving the token to
 `~/.config/hermes-google/token.json`), and prints the remaining manual steps.
 
+### Scopes
+
+The OAuth consent asks for exactly these scopes:
+
+| Scope | Used for |
+|---|---|
+| `gmail.modify` | read the forwarded-mail inbox, mark read, archive, create and edit drafts |
+| `calendar.events` | create, update and delete events on calendars shared with Hermes |
+| `calendar.readonly` | list calendars and events |
+| `drive` | read, upload, update, move, rename, create folders and delete files shared with Hermes |
+
+Hermes never sends mail: the server has no send tool, and `gmail.modify` is
+needed for drafts anyway (every Gmail scope that allows drafts also allows
+sending, so the guarantee is in the code, not the scope). The full `drive`
+scope is needed to rename files you uploaded yourself; Hermes still only
+reaches what you share with its account.
+
+### Upgrading from 0.3.x
+
+0.4.0 changes the scope set. Re-run the consent flow once:
+
+```bash
+hermes-google auth login --headless
+```
+
+Until you do, every tool returns `stored token lacks scopes: ...; run
+'hermes-google auth login' to re-consent`.
+
 ### Host-Side OAuth
 
-The OAuth flow opens a browser for consent — it must run on your host machine,
-not inside a headless container.
+The default OAuth flow opens a browser for consent, so it must run on your
+host machine. Inside a headless container use `hermes-google auth login
+--headless`: it prints a URL to open in any browser and asks you to paste the
+redirect URL back.
 
 If your config and credentials live inside a container (e.g. Docker-mounted
 `~/.config/hermes-google/`), you need to:
@@ -66,8 +98,13 @@ Create filters in your **personal** Gmail to route emails to the Hermes account:
 1. For each sender you want Hermes to handle: create a filter that **both**
    labels the email (e.g. `hermes-review`) **and** forwards it to
    `hermes-yourname@gmail.com` — in a single filter
-2. For replies from Hermes: `from:hermes-yourname@gmail.com` → apply label
-   `hermes`
+2. Forwarding a message to the Hermes account by hand works too
+
+Hermes never sends mail. Reply drafts are written to the **Hermes account's
+Drafts folder**: open that account in Gmail (or add it to your mail app) to
+review and send. A draft sent from there goes out as the Hermes address
+unless you add your own address as a "Send mail as" alias in the Hermes
+account's Gmail settings.
 
 ### Gotchas
 
@@ -83,25 +120,27 @@ Create filters in your **personal** Gmail to route emails to the Hermes account:
 
 - **Calendar:** Share your calendar with the Hermes account at "Make changes to
   events" permission level. Set `[user].calendar_id` in `config.toml`.
-- **Drive:** Share specific files/folders with the Hermes account. Optionally
-  set `[drive].default_parent_folder_id` in `config.toml` for a default upload
-  folder.
+- **Drive:** Share the folders you want Hermes to work in with the Hermes
+  account (editor access to rename or move your own files). Set
+  `[drive].default_parent_folder_id` in `config.toml` to the shared folder so
+  uploads and new folders land where you can see them; without it they go to
+  the Hermes account's own My Drive root.
 
 ## Usage
 
 Once installed, the following tools are available to Hermes in every session:
 
-- `mail_list_pending`, `mail_search`, `mail_get`, `mail_send_draft`,
+- `mail_list_pending`, `mail_search`, `mail_get`, `mail_create_draft`,
+  `mail_create_reply_draft`, `mail_update_draft`, `mail_delete_draft`,
   `mail_mark_read`, `mail_archive`
 - `cal_list_calendars`, `cal_list_events`, `cal_create_event`,
   `cal_update_event`, `cal_delete_event`
 - `drive_search`, `drive_list`, `drive_get`, `drive_upload`, `drive_update`,
-  `drive_move`, `drive_delete`
+  `drive_move`, `drive_rename`, `drive_create_folder`, `drive_delete`
 - `auth_status`
 
-All write operations require user confirmation. `mail_send_draft` is
-structurally restricted to your own email; it cannot send to external
-recipients.
+All write operations require user confirmation. The server has no send
+capability: Gmail writes are drafts in the Hermes mailbox, and you send them.
 
 ## Debug CLI
 
