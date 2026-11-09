@@ -123,7 +123,10 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument(
         "--headless",
         action="store_true",
-        help="use console flow (prints URL, paste auth code) for headless environments",
+        help=(
+            "use console flow (prints a URL, then paste the full redirect URL) "
+            "for headless environments"
+        ),
     )
     login.set_defaults(func=cmd_auth_login)
 
