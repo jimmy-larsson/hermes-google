@@ -132,25 +132,21 @@ mcp = FastMCP("hermes-google", instructions=INSTRUCTIONS, mask_error_details=Tru
 def auth_status() -> dict[str, Any]:
     """Report whether stored credentials are valid and loaded.
 
-    Returns dict with keys: `valid` (bool), `expired` (bool), `scopes` (list of
-    granted OAuth scope URLs), and — only on failure — `error` (string describing
-    the auth or config problem).
+    Returns dict with keys: `valid` (bool), `expired` (bool), `scopes` (the
+    OAuth scopes recorded in the stored token), and, only on failure, `error`
+    (string describing the auth or config problem).
     """
     try:
+        cfg = _get_config()
         creds = _get_credentials()
         return {
             "valid": bool(getattr(creds, "valid", False)),
             "expired": bool(getattr(creds, "expired", False)),
-            "scopes": list(getattr(creds, "scopes", []) or []),
+            "scopes": auth_core.stored_scopes(cfg.credentials_path),
         }
-    except AuthError:
+    except AuthError as exc:
         _reset_services()
-        return {
-            "valid": False,
-            "expired": False,
-            "scopes": [],
-            "error": "credentials not found or invalid; run `hermes-google auth login`",
-        }
+        return {"valid": False, "expired": False, "scopes": [], "error": str(exc)}
     except ConfigError:
         _reset_services()
         return {
