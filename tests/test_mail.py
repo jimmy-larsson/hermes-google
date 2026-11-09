@@ -222,3 +222,21 @@ def test_get_message_exposes_threading_and_recipient_headers(
     assert detail.original_to == "hermes@example.com"
     assert detail.original_cc == "Bob <bob@example.com>"
     assert detail.original_reply_to is None
+
+
+def test_get_message_without_cache_dir_skips_attachments(
+    tmp_path: Path, mock_gmail_service: MagicMock
+) -> None:
+    msg = EmailMessage()
+    msg["From"] = "a@example.com"
+    msg["Subject"] = "With file"
+    msg.set_content("See attachment.")
+    msg.add_attachment(b"data", maintype="application", subtype="pdf", filename="f.pdf")
+    raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    get_call = MagicMock()
+    get_call.execute.return_value = {"id": "m1", "threadId": "t", "raw": raw_b64}
+    mock_gmail_service.users().messages().get.return_value = get_call
+
+    detail = get_message(mock_gmail_service, message_id="m1", cache_dir=None)
+    assert detail.attachment_paths == []
+    assert list(tmp_path.iterdir()) == []

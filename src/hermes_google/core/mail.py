@@ -140,7 +140,7 @@ def _walk_attachments(message_id: str, parsed: EmailMessage, cache_dir: Path) ->
     return paths
 
 
-def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDetail:
+def get_message(service: Any, *, message_id: str, cache_dir: Path | None) -> MessageDetail:
     try:
         resp = service.users().messages().get(userId="me", id=message_id, format="raw").execute()
     except Exception as exc:  # noqa: BLE001
@@ -155,7 +155,7 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
 
     sender = str(parsed.get("From", ""))
     original = unwrap(parsed)
-    attachments = _walk_attachments(message_id, parsed, cache_dir)
+    attachments = _walk_attachments(message_id, parsed, cache_dir) if cache_dir is not None else []
     return MessageDetail(
         id=resp["id"],
         thread_id=resp.get("threadId", ""),

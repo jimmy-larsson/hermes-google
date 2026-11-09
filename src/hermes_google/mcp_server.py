@@ -286,7 +286,7 @@ def mail_create_reply_draft(
     cfg = _get_config()
     explicit_to = None if to is None else drafts_core.parse_recipients(to)
     explicit_cc = None if cc is None else drafts_core.parse_recipients(cc)
-    detail = mail_core.get_message(services.gmail, message_id=message_id, cache_dir=cfg.cache_dir)
+    detail = mail_core.get_message(services.gmail, message_id=message_id, cache_dir=None)
     ctx = drafts_core.reply_context(
         detail, user_email=cfg.user_email, hermes_email=cfg.hermes_account_email
     )
