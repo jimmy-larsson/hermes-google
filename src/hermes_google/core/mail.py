@@ -12,7 +12,6 @@ import os.path
 from dataclasses import dataclass
 from email import message_from_bytes
 from email.message import EmailMessage
-from email.mime.text import MIMEText
 from email.policy import default as default_policy
 from pathlib import Path
 from typing import Any
@@ -173,36 +172,6 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
         original_cc=original.cc,
         original_reply_to=original.reply_to,
     )
-
-
-def _build_raw(to: str, subject: str, body: str, in_reply_to: str | None = None) -> str:
-    # From is populated server-side by Gmail when userId="me".
-    msg = MIMEText(body, _charset="utf-8")
-    msg["To"] = to
-    msg["Subject"] = subject
-    if in_reply_to:
-        msg["In-Reply-To"] = in_reply_to
-        msg["References"] = in_reply_to
-    return base64.urlsafe_b64encode(msg.as_bytes()).decode()
-
-
-def send_draft(
-    service: Any,
-    *,
-    to: str,
-    subject: str,
-    body: str,
-    in_reply_to: str | None = None,
-) -> str:
-    try:
-        raw = _build_raw(to, subject, body, in_reply_to=in_reply_to)
-        resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()
-    except Exception as exc:  # noqa: BLE001
-        raise MailError(api_failure("send draft", exc)) from exc
-    try:
-        return resp["id"]
-    except KeyError as exc:
-        raise MailError("unexpected send response format") from exc
 
 
 def mark_read(service: Any, *, message_id: str) -> None:

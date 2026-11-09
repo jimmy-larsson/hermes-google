@@ -173,41 +173,6 @@ def test_get_message_attachment_path_traversal_rejected(
         )
 
 
-def test_send_draft_to_user_email_succeeds(mock_gmail_service: MagicMock) -> None:
-    from hermes_google.core.mail import send_draft
-
-    send_call = MagicMock()
-    send_call.execute.return_value = {"id": "sent-1"}
-    mock_gmail_service.users().messages().send.return_value = send_call
-
-    result = send_draft(
-        mock_gmail_service,
-        to="jimmy@example.com",
-        subject="Draft: Re: invoice",
-        body="Here's your draft.",
-    )
-    assert result == "sent-1"
-    _, kwargs = mock_gmail_service.users().messages().send.call_args
-    assert kwargs["userId"] == "me"
-    assert "raw" in kwargs["body"]
-
-
-def test_send_draft_allows_any_recipient(mock_gmail_service: MagicMock) -> None:
-    from hermes_google.core.mail import send_draft
-
-    send_call = MagicMock()
-    send_call.execute.return_value = {"id": "sent-2"}
-    mock_gmail_service.users().messages().send.return_value = send_call
-
-    result = send_draft(
-        mock_gmail_service,
-        to="someone-else@example.com",
-        subject="x",
-        body="y",
-    )
-    assert result == "sent-2"
-
-
 def test_mark_read_removes_unread_label(mock_gmail_service: MagicMock) -> None:
     from hermes_google.core.mail import mark_read
 
@@ -232,33 +197,6 @@ def test_archive_removes_inbox_label(mock_gmail_service: MagicMock) -> None:
     _, kwargs = mock_gmail_service.users().messages().modify.call_args
     assert kwargs["id"] == "m1"
     assert kwargs["body"] == {"removeLabelIds": ["INBOX"]}
-
-
-def test_send_draft_with_in_reply_to_adds_threading_headers(
-    mock_gmail_service: MagicMock,
-) -> None:
-    from hermes_google.core.mail import send_draft
-
-    send_call = MagicMock()
-    send_call.execute.return_value = {"id": "sent-2"}
-    mock_gmail_service.users().messages().send.return_value = send_call
-
-    result = send_draft(
-        mock_gmail_service,
-        to="jimmy@example.com",
-        subject="Re: thread",
-        body="reply body",
-        in_reply_to="<original@example.com>",
-    )
-    assert result == "sent-2"
-
-    _, kwargs = mock_gmail_service.users().messages().send.call_args
-    # Decode the raw body and verify In-Reply-To + References headers are set
-    import base64 as _b64
-
-    raw = _b64.urlsafe_b64decode(kwargs["body"]["raw"]).decode()
-    assert "In-Reply-To: <original@example.com>" in raw
-    assert "References: <original@example.com>" in raw
 
 
 def test_get_message_exposes_threading_and_recipient_headers(
