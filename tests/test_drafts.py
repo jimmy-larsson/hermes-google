@@ -21,6 +21,7 @@ from hermes_google.core.drafts import (
     delete_draft,
     parse_recipients,
     reply_context,
+    update_draft,
 )
 from hermes_google.core.mail import MailError, MessageDetail
 
@@ -364,3 +365,131 @@ def test_delete_draft_reports_api_reason(mock_gmail_service: MagicMock) -> None:
     mock_gmail_service.users().drafts().delete.return_value = call
     with pytest.raises(MailError, match="delete draft d1 failed: HTTP 404"):
         delete_draft(mock_gmail_service, draft_id="d1")
+
+
+def _stored_draft(mock_gmail_service: MagicMock, tmp_path: Path) -> MagicMock:
+    txt = tmp_path / "a.txt"
+    txt.write_bytes(b"one")
+    raw = build_draft_raw(
+        to=[Recipient("Alice", "alice@example.com")],
+        cc=[Recipient("", "bob@example.com")],
+        subject="Re: Hello",
+        body="old body",
+        attachments=[txt],
+        in_reply_to="<orig@example.com>",
+        references="<root@example.com> <orig@example.com>",
+    )
+    get_call = MagicMock()
+    get_call.execute.return_value = {
+        "id": "d1",
+        "message": {"id": "m1", "threadId": "t1", "raw": raw},
+    }
+    mock_gmail_service.users().drafts().get.return_value = get_call
+    update_call = MagicMock()
+    update_call.execute.return_value = {"id": "d1", "message": {"id": "m2", "threadId": "t1"}}
+    mock_gmail_service.users().drafts().update.return_value = update_call
+    return update_call
+
+
+def _updated_message(mock_gmail_service: MagicMock) -> tuple[EmailMessage, dict]:
+    _, kwargs = mock_gmail_service.users().drafts().update.call_args
+    return _decode(kwargs["body"]["message"]["raw"]), kwargs
+
+
+def test_update_draft_changes_body_and_keeps_everything_else(
+    mock_gmail_service: MagicMock, tmp_path: Path
+) -> None:
+    _stored_draft(mock_gmail_service, tmp_path)
+
+    ref = update_draft(mock_gmail_service, draft_id="d1", body="new body")
+
+    assert ref.draft_id == "d1"
+    assert ref.message_id == "m2"
+    assert ref.to == ["Alice <alice@example.com>"]
+    assert ref.cc == ["bob@example.com"]
+    assert ref.subject == "Re: Hello"
+    _, get_kwargs = mock_gmail_service.users().drafts().get.call_args
+    assert get_kwargs == {"userId": "me", "id": "d1", "format": "raw"}
+    msg, kwargs = _updated_message(mock_gmail_service)
+    assert kwargs["userId"] == "me"
+    assert kwargs["id"] == "d1"
+    assert kwargs["body"]["message"]["threadId"] == "t1"
+    assert [a.addr_spec for a in msg["To"].addresses] == ["alice@example.com"]
+    assert [a.addr_spec for a in msg["Cc"].addresses] == ["bob@example.com"]
+    assert msg["Subject"] == "Re: Hello"
+    assert msg["In-Reply-To"] == "<orig@example.com>"
+    assert msg["References"] == "<root@example.com> <orig@example.com>"
+    assert msg.get_body(preferencelist=("plain",)).get_content() == "new body\n"
+    assert [(p.get_filename(), p.get_payload(decode=True)) for p in msg.iter_attachments()] == [
+        ("a.txt", b"one")
+    ]
+
+
+def test_update_draft_empty_cc_clears_cc(mock_gmail_service: MagicMock, tmp_path: Path) -> None:
+    _stored_draft(mock_gmail_service, tmp_path)
+    ref = update_draft(mock_gmail_service, draft_id="d1", cc=[])
+    assert ref.cc == []
+    msg, _ = _updated_message(mock_gmail_service)
+    assert "Cc" not in msg
+
+
+def test_update_draft_empty_attachments_removes_all(
+    mock_gmail_service: MagicMock, tmp_path: Path
+) -> None:
+    _stored_draft(mock_gmail_service, tmp_path)
+    update_draft(mock_gmail_service, draft_id="d1", attachments=[])
+    msg, _ = _updated_message(mock_gmail_service)
+    assert list(msg.iter_attachments()) == []
+    assert msg.get_body(preferencelist=("plain",)).get_content() == "old body\n"
+
+
+def test_update_draft_new_attachments_replace_stored_ones(
+    mock_gmail_service: MagicMock, tmp_path: Path
+) -> None:
+    _stored_draft(mock_gmail_service, tmp_path)
+    pdf = tmp_path / "b.pdf"
+    pdf.write_bytes(b"%PDF two")
+    update_draft(mock_gmail_service, draft_id="d1", attachments=[pdf])
+    msg, _ = _updated_message(mock_gmail_service)
+    assert [p.get_filename() for p in msg.iter_attachments()] == ["b.pdf"]
+
+
+def test_update_draft_replaces_recipients_and_subject(
+    mock_gmail_service: MagicMock, tmp_path: Path
+) -> None:
+    _stored_draft(mock_gmail_service, tmp_path)
+    ref = update_draft(
+        mock_gmail_service,
+        draft_id="d1",
+        to=[Recipient("Carol", "carol@example.com")],
+        subject="Re: Hello again",
+    )
+    assert ref.to == ["Carol <carol@example.com>"]
+    assert ref.cc == ["bob@example.com"]
+    msg, _ = _updated_message(mock_gmail_service)
+    assert [a.addr_spec for a in msg["To"].addresses] == ["carol@example.com"]
+    assert msg["Subject"] == "Re: Hello again"
+
+
+def test_update_draft_with_nothing_to_change_raises(mock_gmail_service: MagicMock) -> None:
+    with pytest.raises(MailError, match="nothing to update"):
+        update_draft(mock_gmail_service, draft_id="d1")
+    mock_gmail_service.users().drafts().get.assert_not_called()
+
+
+def test_update_draft_malformed_get_response_raises(mock_gmail_service: MagicMock) -> None:
+    get_call = MagicMock()
+    get_call.execute.return_value = {"id": "d1", "threadId": "t1", "raw": "abc"}
+    mock_gmail_service.users().drafts().get.return_value = get_call
+    with pytest.raises(MailError, match="unexpected draft response"):
+        update_draft(mock_gmail_service, draft_id="d1", body="x")
+
+
+def test_update_draft_reports_api_reason_on_fetch(mock_gmail_service: MagicMock) -> None:
+    resp = httplib2.Response({"status": 404, "reason": "Not Found"})
+    content = b'{"error": {"code": 404, "message": "Requested entity was not found."}}'
+    get_call = MagicMock()
+    get_call.execute.side_effect = HttpError(resp, content, uri="u")
+    mock_gmail_service.users().drafts().get.return_value = get_call
+    with pytest.raises(MailError, match="fetch draft d1 failed: HTTP 404"):
+        update_draft(mock_gmail_service, draft_id="d1", body="x")
