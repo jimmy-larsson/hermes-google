@@ -284,16 +284,20 @@ def mail_create_reply_draft(
     """
     services = _get_services()
     cfg = _get_config()
+    explicit_to = None if to is None else drafts_core.parse_recipients(to)
+    explicit_cc = None if cc is None else drafts_core.parse_recipients(cc)
     detail = mail_core.get_message(services.gmail, message_id=message_id, cache_dir=cfg.cache_dir)
     ctx = drafts_core.reply_context(
         detail, user_email=cfg.user_email, hermes_email=cfg.hermes_account_email
     )
-    reply_to = ctx.to if to is None else drafts_core.parse_recipients(to)
-    if cc is None:
+    if explicit_to is None and not ctx.to:
+        raise mail_core.MailError("original sender address unusable; pass to explicitly")
+    reply_to = ctx.to if explicit_to is None else explicit_to
+    if explicit_cc is None:
         chosen = {r.addr.lower() for r in reply_to}
         reply_cc = [r for r in ctx.cc if r.addr.lower() not in chosen]
     else:
-        reply_cc = drafts_core.parse_recipients(cc)
+        reply_cc = explicit_cc
     ref = drafts_core.create_draft(
         services.gmail,
         to=reply_to,

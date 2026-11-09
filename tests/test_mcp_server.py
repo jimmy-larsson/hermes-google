@@ -630,6 +630,103 @@ def test_mail_create_reply_draft_defaults_to_context_recipients(mocker, tmp_path
     assert kwargs["thread_id"] is None
 
 
+def _reply_setup(mocker, tmp_path, ctx):
+    from hermes_google import mcp_server
+    from hermes_google.core.drafts import DraftRef
+    from hermes_google.core.mail import MessageDetail
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    cfg = MagicMock(cache_dir=tmp_path, user_email="u@x.com", hermes_account_email="h@x.com")
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    detail = MessageDetail(
+        id="m1",
+        thread_id="t1",
+        sender="s",
+        original_sender="Alice <alice@example.com>",
+        original_subject="Hello",
+        original_body="b",
+        in_reply_to=None,
+        forwarding_note=None,
+        attachment_paths=[],
+    )
+    mocker.patch.object(mcp_server.mail_core, "get_message", return_value=detail)
+    mocker.patch.object(mcp_server.drafts_core, "reply_context", return_value=ctx)
+    return mocker.patch.object(
+        mcp_server.drafts_core,
+        "create_draft",
+        return_value=DraftRef(
+            draft_id="d1", message_id="m2", thread_id=None, to=[], cc=[], subject="Re: Hello"
+        ),
+    )
+
+
+def _ctx_with(to, cc, warning=None):
+    from hermes_google.core.drafts import ReplyContext
+
+    return ReplyContext(
+        to=to,
+        cc=cc,
+        subject="Re: Hello",
+        in_reply_to=None,
+        references=None,
+        thread_id=None,
+        warning=warning,
+    )
+
+
+def test_mail_create_reply_draft_refuses_unusable_sender_without_explicit_to(
+    mocker, tmp_path
+) -> None:
+    from hermes_google import mcp_server
+
+    create_spy = _reply_setup(mocker, tmp_path, _ctx_with(to=[], cc=[], warning="ignored: x"))
+    with pytest.raises(ToolError, match="sender address unusable"):
+        mcp_server.mail_create_reply_draft(message_id="m1", body="Hi")
+    create_spy.assert_not_called()
+
+
+def test_mail_create_reply_draft_explicit_to_rescues_unusable_sender(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drafts import Recipient
+
+    create_spy = _reply_setup(mocker, tmp_path, _ctx_with(to=[], cc=[], warning="ignored: x"))
+    result = mcp_server.mail_create_reply_draft(
+        message_id="m1", body="Hi", to=["Carol <carol@example.com>"]
+    )
+    _, kwargs = create_spy.call_args
+    assert kwargs["to"] == [Recipient("Carol", "carol@example.com")]
+    assert result["warning"] == "ignored: x"
+
+
+def test_mail_create_reply_draft_explicit_cc_passes_through(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drafts import Recipient
+
+    create_spy = _reply_setup(
+        mocker,
+        tmp_path,
+        _ctx_with(to=[Recipient("Alice", "alice@example.com")], cc=[Recipient("", "bob@x.com")]),
+    )
+    mcp_server.mail_create_reply_draft(message_id="m1", body="Hi", cc=["dave@example.com"])
+    _, kwargs = create_spy.call_args
+    assert kwargs["to"] == [Recipient("Alice", "alice@example.com")]
+    assert kwargs["cc"] == [Recipient("", "dave@example.com")]
+
+
+def test_mail_create_reply_draft_empty_cc_clears_derived_cc(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drafts import Recipient
+
+    create_spy = _reply_setup(
+        mocker,
+        tmp_path,
+        _ctx_with(to=[Recipient("Alice", "alice@example.com")], cc=[Recipient("", "bob@x.com")]),
+    )
+    mcp_server.mail_create_reply_draft(message_id="m1", body="Hi", cc=[])
+    _, kwargs = create_spy.call_args
+    assert kwargs["cc"] is None
+
+
 def test_mail_update_draft_tool_passes_only_given_fields(mocker) -> None:
     from hermes_google import mcp_server
     from hermes_google.core.drafts import DraftRef
