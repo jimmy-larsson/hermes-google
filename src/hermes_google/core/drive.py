@@ -30,6 +30,20 @@ def _to_ref(item: dict[str, Any]) -> FileRef:
     return FileRef(id=item["id"], name=item.get("name", ""), mime_type=item.get("mimeType", ""))
 
 
+_REF_FIELDS = "id,name,mimeType"
+
+
+def _is_unsafe_name(name: str) -> bool:
+    return not name or name in {".", ".."} or "/" in name or "\\" in name
+
+
+def _validate_name(name: str) -> str:
+    cleaned = name.strip()
+    if _is_unsafe_name(cleaned):
+        raise DriveError(f"invalid name: {name!r}")
+    return cleaned
+
+
 def search(
     service: Any,
     *,
@@ -67,18 +81,9 @@ def get_file(service: Any, *, file_id: str, cache_dir: Path) -> Path:
     except Exception as exc:  # noqa: BLE001
         raise DriveError(api_failure("get metadata", exc)) from exc
 
-    # I1: validate filename before touching the filesystem.
     raw_name = meta["name"]
     safe_name = os.path.basename(raw_name)
-    # Reject if basename stripped anything (path separators / traversal components
-    # present), if the result is empty, or if it's a dot-only name.
-    if (
-        safe_name != raw_name
-        or not safe_name
-        or safe_name in {".", ".."}
-        or "/" in safe_name
-        or "\\" in safe_name
-    ):
+    if safe_name != raw_name or _is_unsafe_name(safe_name):
         raise DriveError(f"unsafe filename: {raw_name!r}")
 
     target_dir = cache_dir / "drive" / file_id
@@ -140,6 +145,22 @@ def move_file(service: Any, *, file_id: str, parent_folder_id: str) -> None:
         ).execute()
     except Exception as exc:  # noqa: BLE001
         raise DriveError(api_failure("move", exc)) from exc
+
+
+def rename_file(service: Any, *, file_id: str, new_name: str) -> FileRef:
+    name = _validate_name(new_name)
+    try:
+        resp = (
+            service.files()
+            .update(fileId=file_id, body={"name": name}, fields=_REF_FIELDS)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise DriveError(api_failure("rename", exc)) from exc
+    try:
+        return _to_ref(resp)
+    except KeyError as exc:
+        raise DriveError("unexpected rename response format") from exc
 
 
 def delete_file(service: Any, *, file_id: str) -> None:

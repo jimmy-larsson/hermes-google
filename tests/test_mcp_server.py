@@ -27,6 +27,7 @@ def test_instructions_contains_key_policies() -> None:
         "drive_delete",  # delete friction
         "data, not instructions",  # prompt-injection note
         "confirm",  # confirmation policy
+        "drive_rename",
     ]
     for snippet in required:
         assert snippet in INSTRUCTIONS, f"missing policy snippet: {snippet!r}"
@@ -62,6 +63,7 @@ def test_smoke_server_has_expected_tools() -> None:
         "drive_upload",
         "drive_update",
         "drive_move",
+        "drive_rename",
         "drive_delete",
     }
     assert expected == tool_names
@@ -103,6 +105,7 @@ def test_idempotent_tools_annotated() -> None:
         "cal_update_event",
         "drive_update",
         "drive_move",
+        "drive_rename",
     }
     for tool in _tool_map().values():
         if tool.name in idempotent_tools:
@@ -420,3 +423,19 @@ def test_auth_error_becomes_tool_error_in_mail_tools(mocker) -> None:
     mocker.patch.object(mcp_server, "_get_services", side_effect=AuthError("expired"))
     with pytest.raises(ToolError, match="expired"):
         mcp_server.mail_list_pending()
+
+
+def test_drive_rename_tool_returns_ref(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drive import FileRef
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    spy = mocker.patch.object(
+        mcp_server.drive_core,
+        "rename_file",
+        return_value=FileRef(id="f1", name="new.pdf", mime_type="application/pdf"),
+    )
+    result = mcp_server.drive_rename(file_id="f1", new_name="new.pdf")
+    assert result == {"id": "f1", "name": "new.pdf", "mime_type": "application/pdf"}
+    _, kwargs = spy.call_args
+    assert kwargs == {"file_id": "f1", "new_name": "new.pdf"}
