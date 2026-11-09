@@ -685,3 +685,27 @@ def test_reply_context_rejects_only_the_bad_cc_token() -> None:
     assert [r.addr for r in ctx.cc] == ["b@x.com", "c@x.com"]
     assert ctx.warning is not None
     assert ".bad@x.com" in ctx.warning
+
+
+def test_update_draft_keeps_bcc_added_in_gmail(mock_gmail_service: MagicMock) -> None:
+    raw = base64.urlsafe_b64decode(
+        build_draft_raw(
+            to=[Recipient("", "a@x.com")],
+            subject="s",
+            body="b",
+            bcc=[Recipient("Secret", "secret@x.com")],
+        )
+    )
+    _store_raw(mock_gmail_service, raw)
+
+    update_draft(mock_gmail_service, draft_id="d1", body="new")
+    msg, _ = _updated_message(mock_gmail_service)
+    assert [(a.display_name, a.addr_spec) for a in msg["Bcc"].addresses] == [
+        ("Secret", "secret@x.com")
+    ]
+    assert msg.get_body(preferencelist=("plain",)).get_content() == "new\n"
+
+
+def test_build_draft_raw_omits_bcc_when_not_given() -> None:
+    msg = _decode(build_draft_raw(to=[Recipient("", "a@x.com")], subject="s", body="b"))
+    assert "Bcc" not in msg
