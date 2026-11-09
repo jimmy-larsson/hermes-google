@@ -156,3 +156,75 @@ def test_original_message_fields_are_immutable() -> None:
     msg = OriginalMessage(sender="a", subject="b", body="c", in_reply_to=None, forwarding_note=None)
     with pytest.raises(dataclasses.FrozenInstanceError):
         msg.sender = "x"  # type: ignore[misc]
+
+
+def test_unwrap_direct_message_exposes_headers_and_normalises_folded_ids() -> None:
+    raw = (
+        b"From: Alice <alice@example.com>\r\n"
+        b"To: Jimmy <jimmy@example.com>, hermes@example.com\r\n"
+        b"Cc: Bob <bob@example.com>\r\n"
+        b"Reply-To: Alice Work <alice@work.example>\r\n"
+        b"Subject: Direct\r\n"
+        b"Message-ID: <direct-1@example.com>\r\n"
+        b"In-Reply-To: <a@example.com>\r\n\t<b@example.com>\r\n"
+        b"References: <root@example.com>\r\n\t<a@example.com>\r\n"
+        b'Content-Type: text/plain; charset="UTF-8"\r\n'
+        b"\r\n"
+        b"Body.\r\n"
+    )
+    msg = message_from_bytes(raw, policy=default_policy)
+    original = unwrap(msg)  # type: ignore[arg-type]
+    assert original.message_id == "<direct-1@example.com>"
+    assert original.in_reply_to == "<a@example.com> <b@example.com>"
+    assert original.references == "<root@example.com> <a@example.com>"
+    assert original.to == "Jimmy <jimmy@example.com>, hermes@example.com"
+    assert original.cc == "Bob <bob@example.com>"
+    assert original.reply_to == "Alice Work <alice@work.example>"
+
+
+def test_unwrap_direct_message_without_headers_yields_none() -> None:
+    msg = EmailMessage()
+    msg["From"] = "direct@example.com"
+    msg["Subject"] = "Plain"
+    msg.set_content("Body.")
+    original = unwrap(msg)
+    assert original.message_id is None
+    assert original.references is None
+    assert original.to is None
+    assert original.cc is None
+    assert original.reply_to is None
+
+
+def test_unwrap_manual_forward_threads_from_wrapper_headers(fixtures_dir: Path) -> None:
+    msg = _load(fixtures_dir, "fwd_plain_gmail_web.eml")
+    msg["In-Reply-To"] = "<orig-001@acme.example>"
+    msg["References"] = "<root@acme.example> <orig-001@acme.example>"
+    original = unwrap(msg)
+    assert original.message_id is None
+    assert original.in_reply_to == "<orig-001@acme.example>"
+    assert original.references == "<root@acme.example> <orig-001@acme.example>"
+    assert original.to == "Jimmy Larsson <jimmy@example.com>"
+    assert original.cc is None
+    assert original.reply_to is None
+
+
+def test_unwrap_manual_forward_reads_inner_cc_and_reply_to() -> None:
+    msg = EmailMessage()
+    msg["From"] = "Jimmy <jimmy@example.com>"
+    msg["Subject"] = "Fwd: Agenda"
+    msg.set_content(
+        "---------- Forwarded message ---------\n"
+        "From: Alex Chen <alex@board.example>\n"
+        "Date: Wed, 22 Apr 2026 at 18:47\n"
+        "Subject: Agenda\n"
+        "To: Jimmy <jimmy@example.com>, Alexandra <alex@example.com>\n"
+        "Cc: Board <board@board.example>\n"
+        "Reply-To: Alex Work <alex.work@board.example>\n\n"
+        "Body."
+    )
+    original = unwrap(msg)
+    assert original.sender == "Alex Chen <alex@board.example>"
+    assert original.to == "Jimmy <jimmy@example.com>, Alexandra <alex@example.com>"
+    assert original.cc == "Board <board@board.example>"
+    assert original.reply_to == "Alex Work <alex.work@board.example>"
+    assert original.body == "Body."

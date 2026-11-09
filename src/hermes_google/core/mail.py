@@ -46,6 +46,11 @@ class MessageDetail:
     in_reply_to: str | None
     forwarding_note: str | None
     attachment_paths: list[Path]
+    rfc_message_id: str | None = None
+    references: str | None = None
+    original_to: str | None = None
+    original_cc: str | None = None
+    original_reply_to: str | None = None
 
 
 def _header(payload: dict[str, Any], name: str) -> str:
@@ -162,6 +167,11 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
         in_reply_to=original.in_reply_to,
         forwarding_note=original.forwarding_note,
         attachment_paths=attachments,
+        rfc_message_id=original.message_id,
+        references=original.references,
+        original_to=original.to,
+        original_cc=original.cc,
+        original_reply_to=original.reply_to,
     )
 
 

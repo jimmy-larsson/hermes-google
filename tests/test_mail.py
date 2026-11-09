@@ -259,3 +259,28 @@ def test_send_draft_with_in_reply_to_adds_threading_headers(
     raw = _b64.urlsafe_b64decode(kwargs["body"]["raw"]).decode()
     assert "In-Reply-To: <original@example.com>" in raw
     assert "References: <original@example.com>" in raw
+
+
+def test_get_message_exposes_threading_and_recipient_headers(
+    tmp_path: Path, mock_gmail_service: MagicMock
+) -> None:
+    msg = EmailMessage()
+    msg["From"] = "Alice <alice@example.com>"
+    msg["To"] = "hermes@example.com"
+    msg["Cc"] = "Bob <bob@example.com>"
+    msg["Subject"] = "Direct"
+    msg["Message-ID"] = "<direct-1@example.com>"
+    msg["References"] = "<root@example.com>"
+    msg.set_content("Body.")
+    raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    get_call = MagicMock()
+    get_call.execute.return_value = {"id": "m1", "threadId": "t", "raw": raw_b64}
+    mock_gmail_service.users().messages().get.return_value = get_call
+
+    detail = get_message(mock_gmail_service, message_id="m1", cache_dir=tmp_path)
+    assert detail.rfc_message_id == "<direct-1@example.com>"
+    assert detail.references == "<root@example.com>"
+    assert detail.in_reply_to is None
+    assert detail.original_to == "hermes@example.com"
+    assert detail.original_cc == "Bob <bob@example.com>"
+    assert detail.original_reply_to is None

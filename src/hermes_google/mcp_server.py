@@ -201,12 +201,13 @@ def mail_search(
 def mail_get(message_id: str) -> dict[str, Any]:
     """Fetch a single email by ID. Unwraps forwarded messages to extract the original.
 
-    Returns dict with keys: `id`, `thread_id`, `sender` (the user who
-    forwarded this message to Hermes — use as the `to` for replies),
-    `original_sender`, `original_subject`, `original_body` (plain text),
-    `in_reply_to` (Message-ID header for threading), `forwarding_note`
-    (text the user wrote above the forward delimiter, or null),
-    `attachment_paths` (list of local file paths in ~/.cache/hermes-google/).
+    Returns dict with keys: `id`, `thread_id`, `sender` (the account that
+    forwarded this message to Hermes), `original_sender`, `original_subject`,
+    `original_body` (plain text), `original_to`, `original_cc`,
+    `original_reply_to`, `rfc_message_id`, `in_reply_to`, `references` (RFC 822
+    threading headers; `mail_create_reply_draft` uses them for you),
+    `forwarding_note` (text the user wrote above the forward delimiter, or
+    null), `attachment_paths` (list of local file paths in ~/.cache/hermes-google/).
     """
     services = _get_services()
     cfg = _get_config()
