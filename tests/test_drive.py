@@ -290,3 +290,19 @@ def test_create_folder_malformed_response_raises(mock_drive_service: MagicMock) 
     mock_drive_service.files().create.return_value = call
     with pytest.raises(DriveError, match="unexpected create response"):
         create_folder(mock_drive_service, name="x")
+
+
+def test_upload_file_missing_local_file_raises_drive_error(
+    tmp_path: Path, mock_drive_service: MagicMock
+) -> None:
+    with pytest.raises(DriveError, match="upload failed: FileNotFoundError"):
+        upload_file(mock_drive_service, local_path=tmp_path / "missing.md", name="missing.md")
+    mock_drive_service.files().create.assert_not_called()
+
+
+def test_update_file_missing_local_file_raises_drive_error(
+    tmp_path: Path, mock_drive_service: MagicMock
+) -> None:
+    with pytest.raises(DriveError, match="update failed: FileNotFoundError"):
+        update_file(mock_drive_service, file_id="f1", local_path=tmp_path / "missing.md")
+    mock_drive_service.files().update.assert_not_called()
