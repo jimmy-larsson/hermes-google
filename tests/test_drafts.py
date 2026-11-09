@@ -631,3 +631,21 @@ def test_reply_context_trims_subject_before_prefixing() -> None:
     assert _ctx(original_subject="  Hello ").subject == "Re: Hello"
     assert _ctx(original_subject="  RE: Hello").subject == "RE: Hello"
     assert _ctx(original_subject="").subject == "Re:"
+
+
+def test_update_draft_keeps_unicode_separators_inside_stored_body(
+    mock_gmail_service: MagicMock,
+) -> None:
+    raw = base64.urlsafe_b64decode(
+        build_draft_raw(
+            to=[Recipient("", "a@x.com")], subject="s", body="one\u2028\u0085still\x0cone\ntwo"
+        )
+    )
+    _store_raw(mock_gmail_service, raw.replace(b"\n", b"\r\n"))
+
+    update_draft(mock_gmail_service, draft_id="d1", to=[Recipient("", "bob@example.com")])
+    msg, _ = _updated_message(mock_gmail_service)
+    assert (
+        msg.get_body(preferencelist=("plain",)).get_content()
+        == "one\u2028\u0085still\x0cone\ntwo\n"
+    )

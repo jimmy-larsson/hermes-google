@@ -25,6 +25,7 @@ from hermes_google.core.forward import normalize_ids
 from hermes_google.core.mail import MailError, MessageDetail
 
 _ADDR_SPEC_RE = re.compile(r"[^\s@]+@[^\s@]+")
+_LINE_ENDING_RE = re.compile(r"\r\n|\r|\n")
 
 
 @dataclass(frozen=True)
@@ -300,7 +301,9 @@ def _load_stored_draft(service: Any, draft_id: str) -> _StoredDraft:
     to, _ = _parse_header_addresses(str(parsed.get("To", "")))
     cc, _ = _parse_header_addresses(str(parsed.get("Cc", "")))
     body_part = parsed.get_body(preferencelist=("plain",))
-    body = "\n".join(body_part.get_content().splitlines()) if body_part is not None else None
+    body = (
+        "\n".join(_LINE_ENDING_RE.split(body_part.get_content())) if body_part is not None else None
+    )
     return _StoredDraft(
         to=to,
         cc=cc,
