@@ -564,3 +564,64 @@ def test_reply_context_treats_malformed_header_as_warning() -> None:
 def test_reply_context_multi_address_reply_to_keeps_all() -> None:
     ctx = _ctx(original_reply_to="r1@x.com, r2@x.com")
     assert [r.addr for r in ctx.to] == ["r1@x.com", "r2@x.com"]
+
+
+def _store_raw(mock_gmail_service: MagicMock, raw_bytes: bytes) -> None:
+    get_call = MagicMock()
+    get_call.execute.return_value = {
+        "id": "d1",
+        "message": {
+            "id": "m1",
+            "threadId": "t1",
+            "raw": base64.urlsafe_b64encode(raw_bytes).decode(),
+        },
+    }
+    mock_gmail_service.users().drafts().get.return_value = get_call
+    update_call = MagicMock()
+    update_call.execute.return_value = {"id": "d1", "message": {"id": "m2", "threadId": "t1"}}
+    mock_gmail_service.users().drafts().update.return_value = update_call
+
+
+def test_update_draft_html_only_draft_needs_explicit_body(mock_gmail_service: MagicMock) -> None:
+    html = EmailMessage()
+    html["To"] = "alice@example.com"
+    html["Subject"] = "Re: Hello"
+    html.set_content("<p>hi</p>", subtype="html")
+    _store_raw(mock_gmail_service, html.as_bytes())
+
+    with pytest.raises(MailError, match="no plain-text body"):
+        update_draft(mock_gmail_service, draft_id="d1", to=[Recipient("", "bob@example.com")])
+    mock_gmail_service.users().drafts().update.assert_not_called()
+
+    update_draft(mock_gmail_service, draft_id="d1", body="plain now")
+    msg, _ = _updated_message(mock_gmail_service)
+    assert msg.get_body(preferencelist=("plain",)).get_content() == "plain now\n"
+
+
+def test_update_draft_normalises_crlf_stored_body(mock_gmail_service: MagicMock) -> None:
+    raw = base64.urlsafe_b64decode(
+        build_draft_raw(to=[Recipient("", "a@x.com")], subject="s", body="line one\nline two")
+    )
+    _store_raw(mock_gmail_service, raw.replace(b"\n", b"\r\n"))
+
+    update_draft(mock_gmail_service, draft_id="d1", to=[Recipient("", "bob@example.com")])
+    msg, _ = _updated_message(mock_gmail_service)
+    assert msg.get_body(preferencelist=("plain",)).get_content() == "line one\nline two\n"
+
+
+def test_update_draft_undecodable_raw_raises(mock_gmail_service: MagicMock) -> None:
+    get_call = MagicMock()
+    get_call.execute.return_value = {
+        "id": "d1",
+        "message": {"id": "m1", "threadId": "t1", "raw": "%%%not-base64%%%"},
+    }
+    mock_gmail_service.users().drafts().get.return_value = get_call
+    with pytest.raises(MailError, match="unexpected draft response"):
+        update_draft(mock_gmail_service, draft_id="d1", body="x")
+
+
+def test_update_draft_empty_to_is_rejected(mock_gmail_service: MagicMock, tmp_path: Path) -> None:
+    _stored_draft(mock_gmail_service, tmp_path)
+    with pytest.raises(MailError, match="at least one To recipient"):
+        update_draft(mock_gmail_service, draft_id="d1", to=[])
+    mock_gmail_service.users().drafts().update.assert_not_called()
