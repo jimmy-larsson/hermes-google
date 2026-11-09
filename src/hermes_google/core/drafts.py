@@ -92,6 +92,7 @@ def build_draft_raw(
     subject: str,
     body: str,
     cc: list[Recipient] | None = None,
+    bcc: list[Recipient] | None = None,
     attachments: list[Path] | None = None,
     attachment_parts: list[Message] | None = None,
     in_reply_to: str | None = None,
@@ -105,6 +106,8 @@ def build_draft_raw(
     msg["To"] = ", ".join(r.render() for r in to)
     if cc:
         msg["Cc"] = ", ".join(r.render() for r in cc)
+    if bcc:
+        msg["Bcc"] = ", ".join(r.render() for r in bcc)
     msg["Subject"] = subject
     if in_reply_to:
         msg["In-Reply-To"] = in_reply_to
@@ -290,6 +293,7 @@ def reply_context(detail: MessageDetail, *, user_email: str, hermes_email: str) 
 class _StoredDraft:
     to: list[Recipient]
     cc: list[Recipient]
+    bcc: list[Recipient]
     subject: str
     body: str | None
     attachment_parts: list[Message]
@@ -312,6 +316,7 @@ def _load_stored_draft(service: Any, draft_id: str) -> _StoredDraft:
     parsed = message_from_bytes(raw_bytes, policy=default_policy)
     to, _ = _parse_header_addresses(str(parsed.get("To", "")))
     cc, _ = _parse_header_addresses(str(parsed.get("Cc", "")))
+    bcc, _ = _parse_header_addresses(str(parsed.get("Bcc", "")))
     body_part = parsed.get_body(preferencelist=("plain",))
     body = (
         "\n".join(_LINE_ENDING_RE.split(body_part.get_content())) if body_part is not None else None
@@ -319,6 +324,7 @@ def _load_stored_draft(service: Any, draft_id: str) -> _StoredDraft:
     return _StoredDraft(
         to=to,
         cc=cc,
+        bcc=bcc,
         subject=str(parsed.get("Subject", "")),
         body=body,
         attachment_parts=list(parsed.iter_attachments()),
@@ -358,6 +364,7 @@ def update_draft(
         subject=new_subject,
         body=new_body,
         cc=new_cc or None,
+        bcc=stored.bcc or None,
         attachments=files,
         attachment_parts=parts,
         in_reply_to=stored.in_reply_to,
