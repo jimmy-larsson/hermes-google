@@ -2433,7 +2433,8 @@ def mail_update_draft(
     Pass only the fields to change; omitted fields keep their stored values.
     `cc=[]` clears Cc, `attachments=[]` removes all attachments, a list of
     paths replaces them, and omitting `attachments` keeps the stored ones.
-    The draft keeps its `draft_id`.
+    The draft keeps its `draft_id`. It is rewritten as plain text: formatting
+    added in Gmail is not kept, and an HTML-only draft needs an explicit `body`.
 
     Returns dict with keys: `draft_id`, `message_id`, `thread_id`, `to`, `cc`,
     `subject`, `warning`.
