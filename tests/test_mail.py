@@ -225,7 +225,7 @@ def test_get_message_exposes_threading_and_recipient_headers(
 
 
 def test_get_message_without_cache_dir_skips_attachments(
-    tmp_path: Path, mock_gmail_service: MagicMock
+    mock_gmail_service: MagicMock, mocker
 ) -> None:
     msg = EmailMessage()
     msg["From"] = "a@example.com"
@@ -237,6 +237,9 @@ def test_get_message_without_cache_dir_skips_attachments(
     get_call.execute.return_value = {"id": "m1", "threadId": "t", "raw": raw_b64}
     mock_gmail_service.users().messages().get.return_value = get_call
 
+    from hermes_google.core import mail as mail_module
+
+    walker = mocker.patch.object(mail_module, "_walk_attachments")
     detail = get_message(mock_gmail_service, message_id="m1", cache_dir=None)
     assert detail.attachment_paths == []
-    assert list(tmp_path.iterdir()) == []
+    walker.assert_not_called()
