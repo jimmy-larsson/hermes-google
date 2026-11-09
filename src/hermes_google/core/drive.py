@@ -115,8 +115,8 @@ def upload_file(
     body: dict[str, Any] = {"name": name}
     if parent_folder_id:
         body["parents"] = [parent_folder_id]
-    media = MediaFileUpload(str(local_path), resumable=True)
     try:
+        media = MediaFileUpload(str(local_path), resumable=True)
         resp = service.files().create(body=body, media_body=media, fields="id").execute()
     except Exception as exc:  # noqa: BLE001
         raise DriveError(api_failure("upload", exc)) from exc
@@ -127,8 +127,8 @@ def upload_file(
 
 
 def update_file(service: Any, *, file_id: str, local_path: Path) -> None:
-    media = MediaFileUpload(str(local_path), resumable=True)
     try:
+        media = MediaFileUpload(str(local_path), resumable=True)
         service.files().update(fileId=file_id, media_body=media).execute()
     except Exception as exc:  # noqa: BLE001
         raise DriveError(api_failure("update", exc)) from exc
