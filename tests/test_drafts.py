@@ -493,3 +493,45 @@ def test_update_draft_reports_api_reason_on_fetch(mock_gmail_service: MagicMock)
     mock_gmail_service.users().drafts().get.return_value = get_call
     with pytest.raises(MailError, match="fetch draft d1 failed: HTTP 404"):
         update_draft(mock_gmail_service, draft_id="d1", body="x")
+
+
+def test_build_draft_raw_attaches_eml_as_rfc822_message(tmp_path: Path) -> None:
+    eml = tmp_path / "orig.eml"
+    eml.write_bytes(b"From: a@x.com\r\nTo: b@x.com\r\nSubject: inner\r\n\r\nhello\r\n")
+    msg = _decode(
+        build_draft_raw(to=[Recipient("", "a@x.com")], subject="s", body="b", attachments=[eml])
+    )
+    parts = list(msg.iter_attachments())
+    assert [p.get_content_type() for p in parts] == ["message/rfc822"]
+    inner = parts[0].get_payload(0)
+    assert inner["Subject"] == "inner"
+    assert inner.get_content().strip() == "hello"
+
+
+def test_build_draft_raw_carries_rfc822_parts_with_content(tmp_path: Path) -> None:
+    eml = tmp_path / "orig.eml"
+    eml.write_bytes(b"From: a@x.com\r\nTo: b@x.com\r\nSubject: inner\r\n\r\nhello\r\n")
+    first = _decode(
+        build_draft_raw(to=[Recipient("", "a@x.com")], subject="s", body="b", attachments=[eml])
+    )
+    second = _decode(
+        build_draft_raw(
+            to=[Recipient("", "a@x.com")],
+            subject="s",
+            body="new",
+            attachment_parts=list(first.iter_attachments()),
+        )
+    )
+    parts = list(second.iter_attachments())
+    assert [p.get_content_type() for p in parts] == ["message/rfc822"]
+    inner = parts[0].get_payload(0)
+    assert inner["Subject"] == "inner"
+    assert inner.get_content().strip() == "hello"
+
+
+def test_build_draft_raw_unreadable_attachment_raises(tmp_path: Path, mocker) -> None:
+    pdf = tmp_path / "locked.pdf"
+    pdf.write_bytes(b"x")
+    mocker.patch.object(Path, "read_bytes", side_effect=PermissionError("denied"))
+    with pytest.raises(MailError, match="attachment unreadable"):
+        build_draft_raw(to=[Recipient("", "a@x.com")], subject="s", body="b", attachments=[pdf])

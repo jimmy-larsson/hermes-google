@@ -92,16 +92,25 @@ def build_draft_raw(
             raise MailError(f"attachment not found: {path}")
         mime_type, _ = mimetypes.guess_type(str(path))
         maintype, subtype = (mime_type or "application/octet-stream").split("/", 1)
-        msg.add_attachment(
-            path.read_bytes(), maintype=maintype, subtype=subtype, filename=path.name
-        )
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise MailError(f"attachment unreadable: {path}") from exc
+        if maintype == "message":
+            msg.add_attachment(message_from_bytes(data, policy=default_policy), filename=path.name)
+        else:
+            msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=path.name)
     for part in attachment_parts or []:
+        filename = part.get_filename() or "attachment"
+        if part.get_content_maintype() == "message":
+            msg.add_attachment(part.get_payload(0), filename=filename)
+            continue
         maintype, subtype = part.get_content_type().split("/", 1)
         msg.add_attachment(
             part.get_payload(decode=True) or b"",
             maintype=maintype,
             subtype=subtype,
-            filename=part.get_filename() or "attachment",
+            filename=filename,
         )
     return base64.urlsafe_b64encode(msg.as_bytes()).decode()
 
