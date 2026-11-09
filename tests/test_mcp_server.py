@@ -482,12 +482,13 @@ def test_drive_create_folder_explicit_parent_wins(mocker) -> None:
 def test_server_has_no_send_capability() -> None:
     import inspect
 
+    from hermes_google import mcp_server
     from hermes_google.core import drafts as drafts_core
     from hermes_google.core import mail as mail_core
 
     assert not hasattr(mail_core, "send_draft")
-    assert "mail_send_draft" not in _tool_map()
-    for module in (mail_core, drafts_core):
+    assert not any("send" in name for name in _tool_map())
+    for module in (mail_core, drafts_core, mcp_server):
         assert ".send(" not in inspect.getsource(module)
 
 
