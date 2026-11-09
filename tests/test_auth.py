@@ -19,6 +19,7 @@ from hermes_google.core.auth import (
     build_services,
     load_credentials,
     save_credentials,
+    stored_scopes,
 )
 
 
@@ -120,3 +121,60 @@ def test_build_services_returns_three_services(mocker: pytest_mock.MockerFixture
     assert services.gmail is fake_gmail
     assert services.calendar is fake_cal
     assert services.drive is fake_drive
+
+
+def test_scopes_are_exactly_the_four_required() -> None:
+    assert SCOPES == (
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/drive",
+    )
+
+
+def test_stored_scopes_reads_token_file(tmp_path: Path) -> None:
+    path = tmp_path / "token.json"
+    path.write_text(json.dumps({"token": "t", "scopes": ["a", "b"]}))
+    assert stored_scopes(path) == ["a", "b"]
+
+
+def test_stored_scopes_without_key_is_empty(tmp_path: Path) -> None:
+    path = tmp_path / "token.json"
+    path.write_text(json.dumps({"token": "t"}))
+    assert stored_scopes(path) == []
+
+
+def test_stored_scopes_unreadable_file_raises(tmp_path: Path) -> None:
+    path = tmp_path / "token.json"
+    path.write_text("not json")
+    with pytest.raises(AuthError, match="unreadable"):
+        stored_scopes(path)
+
+
+def test_load_credentials_rejects_token_missing_required_scope(tmp_path: Path) -> None:
+    path = tmp_path / "token.json"
+    creds = _FakeCreds()
+    creds._json["scopes"] = [s for s in SCOPES if not s.endswith("/drive")]
+    save_credentials(creds, path)  # type: ignore[arg-type]
+    with pytest.raises(AuthError, match="lacks scopes: https://www.googleapis.com/auth/drive;"):
+        load_credentials(path)
+
+
+def test_load_credentials_rejects_token_without_scopes_key(tmp_path: Path) -> None:
+    path = tmp_path / "token.json"
+    path.write_text(json.dumps({"token": "t", "refresh_token": "r"}))
+    with pytest.raises(AuthError, match="lacks scopes"):
+        load_credentials(path)
+
+
+def test_load_credentials_accepts_superset_of_scopes(
+    tmp_path: Path, mocker: pytest_mock.MockerFixture
+) -> None:
+    path = tmp_path / "token.json"
+    creds = _FakeCreds()
+    creds._json["scopes"] = [*SCOPES, "https://www.googleapis.com/auth/drive.file"]
+    save_credentials(creds, path)  # type: ignore[arg-type]
+    mocker.patch.object(
+        auth_module.Credentials, "from_authorized_user_file", return_value=_FakeCreds()
+    )
+    assert load_credentials(path).valid is True

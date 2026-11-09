@@ -57,7 +57,7 @@ def cmd_auth_status(_args: argparse.Namespace) -> int:
         {
             "valid": bool(creds.valid),
             "expired": bool(creds.expired),
-            "scopes": list(getattr(creds, "scopes", []) or []),
+            "scopes": auth_core.stored_scopes(cfg.credentials_path),
         }
     )
     return 0

@@ -5,6 +5,7 @@ Gmail/Calendar/Drive scopes are hardcoded here (single source of truth).
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,12 +22,9 @@ from hermes_google.core.errors import ServiceError
 
 SCOPES: tuple[str, ...] = (
     "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.readonly",
-    # Drive: readonly covers files shared to us; drive.file covers own writes.
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive",
 )
 
 
@@ -50,9 +48,25 @@ def save_credentials(creds: Credentials, path: Path) -> None:
     os.replace(tmp, path)
 
 
+def stored_scopes(path: Path) -> list[str]:
+    try:
+        info = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise AuthError("credentials file is unreadable; run `hermes-google auth login`") from exc
+    return [str(scope) for scope in info.get("scopes") or []]
+
+
 def load_credentials(path: Path) -> Credentials:
     if not path.exists():
         raise AuthError("credentials not found; run `hermes-google auth login`")
+    granted = set(stored_scopes(path))
+    missing = [scope for scope in SCOPES if scope not in granted]
+    if missing:
+        raise AuthError(
+            "stored token lacks scopes: "
+            + ", ".join(missing)
+            + "; run 'hermes-google auth login' to re-consent"
+        )
     creds = Credentials.from_authorized_user_file(str(path), scopes=list(SCOPES))
     if not creds.valid:
         if creds.expired and creds.refresh_token:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -109,27 +110,40 @@ def test_idempotent_tools_annotated() -> None:
             assert tool.annotations.idempotentHint is True, f"{tool.name} should be idempotent"
 
 
-def test_auth_status_tool_reports_validity(mocker) -> None:
-    """auth_status should return a dict describing whether creds load."""
+def test_auth_status_tool_reports_stored_scopes(mocker) -> None:
     from hermes_google import mcp_server
 
-    fake_creds = MagicMock(valid=True, expired=False, scopes=["gmail.send"])
+    cfg = MagicMock(credentials_path=Path("/nonexistent/token.json"))
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    fake_creds = MagicMock(valid=True, expired=False, scopes=["requested-only"])
     mocker.patch.object(mcp_server, "_get_credentials", return_value=fake_creds)
+    mocker.patch.object(
+        mcp_server.auth_core,
+        "stored_scopes",
+        return_value=["https://www.googleapis.com/auth/drive"],
+    )
 
     result = mcp_server.auth_status()
     assert result["valid"] is True
     assert result["expired"] is False
-    assert "scopes" in result
+    assert result["scopes"] == ["https://www.googleapis.com/auth/drive"]
+    mcp_server.auth_core.stored_scopes.assert_called_once_with(Path("/nonexistent/token.json"))
 
 
-def test_auth_status_missing_credentials(mocker) -> None:
+def test_auth_status_surfaces_auth_error_text(mocker) -> None:
     from hermes_google import mcp_server
     from hermes_google.core.auth import AuthError
 
-    mocker.patch.object(mcp_server, "_get_credentials", side_effect=AuthError("missing"))
+    mocker.patch.object(mcp_server, "_get_config", return_value=MagicMock())
+    mocker.patch.object(
+        mcp_server,
+        "_get_credentials",
+        side_effect=AuthError("stored token lacks scopes: x; run 'hermes-google auth login'"),
+    )
     result = mcp_server.auth_status()
     assert result["valid"] is False
-    assert "credentials" in result["error"]
+    assert result["scopes"] == []
+    assert result["error"].startswith("stored token lacks scopes: x")
     assert "/home" not in result["error"]
 
 
@@ -137,7 +151,7 @@ def test_auth_status_config_error(mocker) -> None:
     from hermes_google import mcp_server
     from hermes_google.core.config import ConfigError
 
-    mocker.patch.object(mcp_server, "_get_credentials", side_effect=ConfigError("bad config"))
+    mocker.patch.object(mcp_server, "_get_config", side_effect=ConfigError("bad config"))
     result = mcp_server.auth_status()
     assert result["valid"] is False
     assert "configuration" in result["error"]
