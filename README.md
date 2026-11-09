@@ -97,7 +97,7 @@ Create filters in your **personal** Gmail to route emails to the Hermes account:
 
 1. For each sender you want Hermes to handle: create a filter that **both**
    labels the email (e.g. `hermes-review`) **and** forwards it to
-   `hermes-yourname@gmail.com` — in a single filter
+   `hermes-yourname@gmail.com`, in a single filter
 2. Forwarding a message to the Hermes account by hand works too
 
 Hermes never sends mail. Reply drafts are written to the **Hermes account's
