@@ -41,7 +41,7 @@ def _parse_header_addresses(value: str) -> tuple[list[Recipient], list[str]]:
     """Parse an address header value into (usable recipients, rejected entries)."""
     try:
         header = default_policy.header_factory("To", value)
-    except (ValueError, IndexError):
+    except Exception:  # noqa: BLE001
         return [], [value]
     if any(isinstance(defect, email_errors.InvalidHeaderDefect) for defect in header.defects):
         return [], [value]

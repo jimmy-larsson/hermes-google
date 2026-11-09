@@ -546,6 +546,8 @@ def test_build_draft_raw_unreadable_attachment_raises(tmp_path: Path, mocker) ->
         "<a@x.com> <b@x.com>",
         ".a@x.com",
         "a..b@x.com",
+        "a@[1.2.3.4",
+        "a@x.com; b@x.com",
     ],
 )
 def test_parse_recipients_rejects_malformed_entries(bad: str) -> None:
