@@ -115,7 +115,11 @@ def build_draft_raw(
         msg["References"] = references or in_reply_to
     msg.set_content(body)
     for path in attachments or []:
-        if not path.is_file():
+        try:
+            present = path.is_file()
+        except OSError as exc:
+            raise MailError(f"attachment unreadable: {path}") from exc
+        if not present:
             raise MailError(f"attachment not found: {path}")
         mime_type, _ = mimetypes.guess_type(str(path))
         maintype, subtype = (mime_type or "application/octet-stream").split("/", 1)
