@@ -25,6 +25,11 @@ class OriginalMessage:
     body: str
     in_reply_to: str | None
     forwarding_note: str | None
+    message_id: str | None = None
+    references: str | None = None
+    to: str | None = None
+    cc: str | None = None
+    reply_to: str | None = None
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -55,7 +60,7 @@ _DELIMITERS = [
 _HEADER_LINE = re.compile(
     r"^\s*(From|Subject|Date|To|Sent|Cc|Bcc|Reply-To)\s*:\s*(.*)$", re.IGNORECASE
 )
-_KEEP_HEADERS = {"from", "subject", "date", "to"}
+_KEEP_HEADERS = {"from", "subject", "date", "to", "cc", "reply-to"}
 
 
 def _get_plain_body(msg: EmailMessage) -> str:
@@ -111,6 +116,20 @@ def _parse_inner_headers(chunk: str) -> tuple[dict[str, str], str]:
     return headers, "\n".join(lines[idx:]).strip()
 
 
+def normalize_ids(value: object) -> str | None:
+    """Collapse the whitespace of a Message-ID style header, keeping every id."""
+    if value is None:
+        return None
+    return " ".join(str(value).split()) or None
+
+
+def _header_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def unwrap(msg: EmailMessage) -> OriginalMessage:
     body = _get_plain_body(msg)
     split = _split_on_delimiter(body)
@@ -120,8 +139,13 @@ def unwrap(msg: EmailMessage) -> OriginalMessage:
             sender=msg.get("From", ""),
             subject=msg.get("Subject", ""),
             body=body.strip(),
-            in_reply_to=msg.get("In-Reply-To"),
+            in_reply_to=normalize_ids(msg.get("In-Reply-To")),
             forwarding_note=None,
+            message_id=normalize_ids(msg.get("Message-ID")),
+            references=normalize_ids(msg.get("References")),
+            to=_header_or_none(msg.get("To")),
+            cc=_header_or_none(msg.get("Cc")),
+            reply_to=_header_or_none(msg.get("Reply-To")),
         )
 
     preamble, after = split
@@ -131,6 +155,11 @@ def unwrap(msg: EmailMessage) -> OriginalMessage:
         sender=headers.get("from", msg.get("From", "")),
         subject=headers.get("subject", msg.get("Subject", "")),
         body=inner_body,
-        in_reply_to=msg.get("In-Reply-To"),
+        in_reply_to=normalize_ids(msg.get("In-Reply-To")),
         forwarding_note=note,
+        message_id=None,
+        references=normalize_ids(msg.get("References")),
+        to=headers.get("to"),
+        cc=headers.get("cc"),
+        reply_to=headers.get("reply-to"),
     )
