@@ -709,3 +709,10 @@ def test_update_draft_keeps_bcc_added_in_gmail(mock_gmail_service: MagicMock) ->
 def test_build_draft_raw_omits_bcc_when_not_given() -> None:
     msg = _decode(build_draft_raw(to=[Recipient("", "a@x.com")], subject="s", body="b"))
     assert "Bcc" not in msg
+
+
+def test_build_draft_raw_unreadable_attachment_directory_raises(tmp_path: Path, mocker) -> None:
+    pdf = tmp_path / "locked" / "x.pdf"
+    mocker.patch.object(Path, "is_file", side_effect=PermissionError("denied"))
+    with pytest.raises(MailError, match="attachment unreadable"):
+        build_draft_raw(to=[Recipient("", "a@x.com")], subject="s", body="b", attachments=[pdf])
