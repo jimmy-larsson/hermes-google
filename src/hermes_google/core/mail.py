@@ -12,12 +12,11 @@ import os.path
 from dataclasses import dataclass
 from email import message_from_bytes
 from email.message import EmailMessage
-from email.mime.text import MIMEText
 from email.policy import default as default_policy
 from pathlib import Path
 from typing import Any
 
-from hermes_google.core.errors import ServiceError
+from hermes_google.core.errors import ServiceError, api_failure
 from hermes_google.core.forward import unwrap
 
 
@@ -46,6 +45,11 @@ class MessageDetail:
     in_reply_to: str | None
     forwarding_note: str | None
     attachment_paths: list[Path]
+    rfc_message_id: str | None = None
+    references: str | None = None
+    original_to: str | None = None
+    original_cc: str | None = None
+    original_reply_to: str | None = None
 
 
 def _header(payload: dict[str, Any], name: str) -> str:
@@ -91,7 +95,7 @@ def _list_and_hydrate(
             kwargs["labelIds"] = label_ids
         resp = service.users().messages().list(**kwargs).execute()
     except Exception as exc:  # noqa: BLE001 - Google client raises HttpError; keep broad for tests
-        raise MailError("failed to list messages") from exc
+        raise MailError(api_failure("list messages", exc)) from exc
 
     ids = [m["id"] for m in resp.get("messages", [])]
     out: list[PendingMessage] = []
@@ -136,11 +140,11 @@ def _walk_attachments(message_id: str, parsed: EmailMessage, cache_dir: Path) ->
     return paths
 
 
-def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDetail:
+def get_message(service: Any, *, message_id: str, cache_dir: Path | None) -> MessageDetail:
     try:
         resp = service.users().messages().get(userId="me", id=message_id, format="raw").execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError(f"failed to fetch message {message_id}") from exc
+        raise MailError(api_failure(f"fetch message {message_id}", exc)) from exc
 
     try:
         raw_field = resp["raw"]
@@ -151,7 +155,7 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
 
     sender = str(parsed.get("From", ""))
     original = unwrap(parsed)
-    attachments = _walk_attachments(message_id, parsed, cache_dir)
+    attachments = _walk_attachments(message_id, parsed, cache_dir) if cache_dir is not None else []
     return MessageDetail(
         id=resp["id"],
         thread_id=resp.get("threadId", ""),
@@ -162,37 +166,12 @@ def get_message(service: Any, *, message_id: str, cache_dir: Path) -> MessageDet
         in_reply_to=original.in_reply_to,
         forwarding_note=original.forwarding_note,
         attachment_paths=attachments,
+        rfc_message_id=original.message_id,
+        references=original.references,
+        original_to=original.to,
+        original_cc=original.cc,
+        original_reply_to=original.reply_to,
     )
-
-
-def _build_raw(to: str, subject: str, body: str, in_reply_to: str | None = None) -> str:
-    # From is populated server-side by Gmail when userId="me".
-    msg = MIMEText(body, _charset="utf-8")
-    msg["To"] = to
-    msg["Subject"] = subject
-    if in_reply_to:
-        msg["In-Reply-To"] = in_reply_to
-        msg["References"] = in_reply_to
-    return base64.urlsafe_b64encode(msg.as_bytes()).decode()
-
-
-def send_draft(
-    service: Any,
-    *,
-    to: str,
-    subject: str,
-    body: str,
-    in_reply_to: str | None = None,
-) -> str:
-    try:
-        raw = _build_raw(to, subject, body, in_reply_to=in_reply_to)
-        resp = service.users().messages().send(userId="me", body={"raw": raw}).execute()
-    except Exception as exc:  # noqa: BLE001
-        raise MailError("failed to send draft") from exc
-    try:
-        return resp["id"]
-    except KeyError as exc:
-        raise MailError("unexpected send response format") from exc
 
 
 def mark_read(service: Any, *, message_id: str) -> None:
@@ -201,7 +180,7 @@ def mark_read(service: Any, *, message_id: str) -> None:
             userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError("failed to mark read") from exc
+        raise MailError(api_failure("mark read", exc)) from exc
 
 
 def archive(service: Any, *, message_id: str) -> None:
@@ -210,4 +189,4 @@ def archive(service: Any, *, message_id: str) -> None:
             userId="me", id=message_id, body={"removeLabelIds": ["INBOX"]}
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        raise MailError("failed to archive") from exc
+        raise MailError(api_failure("archive", exc)) from exc

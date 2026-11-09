@@ -5,15 +5,20 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import httplib2
 import pytest
+from googleapiclient.errors import HttpError
 
 from hermes_google.core.drive import (
+    FOLDER_MIME_TYPE,
     DriveError,
     FileRef,
+    create_folder,
     delete_file,
     get_file,
     list_folder,
     move_file,
+    rename_file,
     search,
     update_file,
     upload_file,
@@ -189,3 +194,115 @@ def test_search_escapes_single_quotes(mock_drive_service: MagicMock) -> None:
     _, kwargs = mock_drive_service.files().list.call_args
     assert "\\'" in kwargs["q"]
     assert "O\\'Brien" in kwargs["q"]
+
+
+def test_search_reports_api_reason(mock_drive_service: MagicMock) -> None:
+    resp = httplib2.Response({"status": 404, "reason": "Not Found"})
+    content = b'{"error": {"code": 404, "message": "File not found: abc."}}'
+    call = MagicMock()
+    call.execute.side_effect = HttpError(resp, content, uri="u")
+    mock_drive_service.files().list.return_value = call
+
+    with pytest.raises(DriveError, match="search failed: HTTP 404 File not found: abc."):
+        search(mock_drive_service, query="abc")
+
+
+def test_rename_file_updates_name_and_returns_ref(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {
+        "id": "f1",
+        "name": "SMBC pack 01.pdf",
+        "mimeType": "application/pdf",
+    }
+    mock_drive_service.files().update.return_value = call
+
+    ref = rename_file(mock_drive_service, file_id="f1", new_name="  SMBC pack 01.pdf ")
+    assert ref == FileRef(id="f1", name="SMBC pack 01.pdf", mime_type="application/pdf")
+    _, kwargs = mock_drive_service.files().update.call_args
+    assert kwargs["fileId"] == "f1"
+    assert kwargs["body"] == {"name": "SMBC pack 01.pdf"}
+    assert kwargs["fields"] == "id,name,mimeType"
+
+
+@pytest.mark.parametrize("bad", ["", "   ", ".", "..", "a/b", "a\\b"])
+def test_rename_file_rejects_unsafe_names(mock_drive_service: MagicMock, bad: str) -> None:
+    with pytest.raises(DriveError, match="invalid name"):
+        rename_file(mock_drive_service, file_id="f1", new_name=bad)
+    mock_drive_service.files().update.assert_not_called()
+
+
+def test_rename_file_malformed_response_raises(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"name": "x"}
+    mock_drive_service.files().update.return_value = call
+    with pytest.raises(DriveError, match="unexpected rename response"):
+        rename_file(mock_drive_service, file_id="f1", new_name="x")
+
+
+def test_rename_file_reports_api_reason(mock_drive_service: MagicMock) -> None:
+    resp = httplib2.Response({"status": 403, "reason": "Forbidden"})
+    content = (
+        b'{"error": {"code": 403, "message": "The user does not have sufficient '
+        b'permissions for this file."}}'
+    )
+    call = MagicMock()
+    call.execute.side_effect = HttpError(resp, content, uri="u")
+    mock_drive_service.files().update.return_value = call
+    with pytest.raises(DriveError, match="rename failed: HTTP 403 The user does not have"):
+        rename_file(mock_drive_service, file_id="f1", new_name="x")
+
+
+def test_create_folder_sends_folder_mime_type_and_parent(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"id": "d1", "name": "SMBC pack", "mimeType": FOLDER_MIME_TYPE}
+    mock_drive_service.files().create.return_value = call
+
+    ref = create_folder(mock_drive_service, name=" SMBC pack ", parent_folder_id="PARENT")
+    assert ref == FileRef(id="d1", name="SMBC pack", mime_type=FOLDER_MIME_TYPE)
+    _, kwargs = mock_drive_service.files().create.call_args
+    assert kwargs["body"] == {
+        "name": "SMBC pack",
+        "mimeType": FOLDER_MIME_TYPE,
+        "parents": ["PARENT"],
+    }
+    assert kwargs["fields"] == "id,name,mimeType"
+
+
+def test_create_folder_without_parent_omits_parents(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"id": "d1", "name": "x", "mimeType": FOLDER_MIME_TYPE}
+    mock_drive_service.files().create.return_value = call
+
+    create_folder(mock_drive_service, name="x")
+    _, kwargs = mock_drive_service.files().create.call_args
+    assert "parents" not in kwargs["body"]
+
+
+def test_create_folder_rejects_unsafe_name(mock_drive_service: MagicMock) -> None:
+    with pytest.raises(DriveError, match="invalid name"):
+        create_folder(mock_drive_service, name="a/b")
+    mock_drive_service.files().create.assert_not_called()
+
+
+def test_create_folder_malformed_response_raises(mock_drive_service: MagicMock) -> None:
+    call = MagicMock()
+    call.execute.return_value = {"name": "x"}
+    mock_drive_service.files().create.return_value = call
+    with pytest.raises(DriveError, match="unexpected create response"):
+        create_folder(mock_drive_service, name="x")
+
+
+def test_upload_file_missing_local_file_raises_drive_error(
+    tmp_path: Path, mock_drive_service: MagicMock
+) -> None:
+    with pytest.raises(DriveError, match="upload failed: FileNotFoundError"):
+        upload_file(mock_drive_service, local_path=tmp_path / "missing.md", name="missing.md")
+    mock_drive_service.files().create.assert_not_called()
+
+
+def test_update_file_missing_local_file_raises_drive_error(
+    tmp_path: Path, mock_drive_service: MagicMock
+) -> None:
+    with pytest.raises(DriveError, match="update failed: FileNotFoundError"):
+        update_file(mock_drive_service, file_id="f1", local_path=tmp_path / "missing.md")
+    mock_drive_service.files().update.assert_not_called()

@@ -57,7 +57,7 @@ def cmd_auth_status(_args: argparse.Namespace) -> int:
         {
             "valid": bool(creds.valid),
             "expired": bool(creds.expired),
-            "scopes": list(getattr(creds, "scopes", []) or []),
+            "scopes": auth_core.stored_scopes(cfg.credentials_path),
         }
     )
     return 0
@@ -123,7 +123,10 @@ def build_parser() -> argparse.ArgumentParser:
     login.add_argument(
         "--headless",
         action="store_true",
-        help="use console flow (prints URL, paste auth code) for headless environments",
+        help=(
+            "use console flow (prints a URL, then paste the full redirect URL) "
+            "for headless environments"
+        ),
     )
     login.set_defaults(func=cmd_auth_login)
 

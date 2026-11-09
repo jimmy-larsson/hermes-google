@@ -10,3 +10,6 @@ build/
 credentials.json
 client_secret*.json
 .cache/
+
+# git worktrees (see .worktrees/)
+.worktrees/

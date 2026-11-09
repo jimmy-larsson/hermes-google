@@ -9,7 +9,7 @@ from typing import Any
 
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
-from hermes_google.core.errors import ServiceError
+from hermes_google.core.errors import ServiceError, api_failure
 
 
 class DriveError(ServiceError):
@@ -30,6 +30,21 @@ def _to_ref(item: dict[str, Any]) -> FileRef:
     return FileRef(id=item["id"], name=item.get("name", ""), mime_type=item.get("mimeType", ""))
 
 
+_REF_FIELDS = "id,name,mimeType"
+FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
+
+
+def _is_unsafe_name(name: str) -> bool:
+    return not name or name in {".", ".."} or "/" in name or "\\" in name
+
+
+def _validate_name(name: str) -> str:
+    cleaned = name.strip()
+    if _is_unsafe_name(cleaned):
+        raise DriveError(f"invalid name: {name!r}")
+    return cleaned
+
+
 def search(
     service: Any,
     *,
@@ -47,7 +62,7 @@ def search(
             service.files().list(q=" and ".join(q_parts), fields=_FIELDS, pageSize=limit).execute()
         )
     except Exception as exc:  # noqa: BLE001
-        raise DriveError("search failed") from exc
+        raise DriveError(api_failure("search", exc)) from exc
     return [_to_ref(i) for i in resp.get("files", [])]
 
 
@@ -57,7 +72,7 @@ def list_folder(service: Any, *, folder_id: str, limit: int = 50) -> list[FileRe
     try:
         resp = service.files().list(q=q, fields=_FIELDS, pageSize=limit).execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError("list folder failed") from exc
+        raise DriveError(api_failure("list folder", exc)) from exc
     return [_to_ref(i) for i in resp.get("files", [])]
 
 
@@ -65,20 +80,11 @@ def get_file(service: Any, *, file_id: str, cache_dir: Path) -> Path:
     try:
         meta = service.files().get(fileId=file_id, fields="id,name,mimeType").execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError("get metadata failed") from exc
+        raise DriveError(api_failure("get metadata", exc)) from exc
 
-    # I1: validate filename before touching the filesystem.
     raw_name = meta["name"]
     safe_name = os.path.basename(raw_name)
-    # Reject if basename stripped anything (path separators / traversal components
-    # present), if the result is empty, or if it's a dot-only name.
-    if (
-        safe_name != raw_name
-        or not safe_name
-        or safe_name in {".", ".."}
-        or "/" in safe_name
-        or "\\" in safe_name
-    ):
+    if safe_name != raw_name or _is_unsafe_name(safe_name):
         raise DriveError(f"unsafe filename: {raw_name!r}")
 
     target_dir = cache_dir / "drive" / file_id
@@ -109,11 +115,11 @@ def upload_file(
     body: dict[str, Any] = {"name": name}
     if parent_folder_id:
         body["parents"] = [parent_folder_id]
-    media = MediaFileUpload(str(local_path), resumable=True)
     try:
+        media = MediaFileUpload(str(local_path), resumable=True)
         resp = service.files().create(body=body, media_body=media, fields="id").execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError("upload failed") from exc
+        raise DriveError(api_failure("upload", exc)) from exc
     try:
         return resp["id"]
     except KeyError as exc:
@@ -121,11 +127,11 @@ def upload_file(
 
 
 def update_file(service: Any, *, file_id: str, local_path: Path) -> None:
-    media = MediaFileUpload(str(local_path), resumable=True)
     try:
+        media = MediaFileUpload(str(local_path), resumable=True)
         service.files().update(fileId=file_id, media_body=media).execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError("update failed") from exc
+        raise DriveError(api_failure("update", exc)) from exc
 
 
 def move_file(service: Any, *, file_id: str, parent_folder_id: str) -> None:
@@ -139,11 +145,47 @@ def move_file(service: Any, *, file_id: str, parent_folder_id: str) -> None:
             fields="id",
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError("move failed") from exc
+        raise DriveError(api_failure("move", exc)) from exc
+
+
+def rename_file(service: Any, *, file_id: str, new_name: str) -> FileRef:
+    name = _validate_name(new_name)
+    try:
+        resp = (
+            service.files()
+            .update(fileId=file_id, body={"name": name}, fields=_REF_FIELDS)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise DriveError(api_failure("rename", exc)) from exc
+    try:
+        return _to_ref(resp)
+    except KeyError as exc:
+        raise DriveError("unexpected rename response format") from exc
+
+
+def create_folder(
+    service: Any,
+    *,
+    name: str,
+    parent_folder_id: str | None = None,
+) -> FileRef:
+    folder_name = _validate_name(name)
+    body: dict[str, Any] = {"name": folder_name, "mimeType": FOLDER_MIME_TYPE}
+    if parent_folder_id:
+        body["parents"] = [parent_folder_id]
+    try:
+        resp = service.files().create(body=body, fields=_REF_FIELDS).execute()
+    except Exception as exc:  # noqa: BLE001
+        raise DriveError(api_failure("create folder", exc)) from exc
+    try:
+        return _to_ref(resp)
+    except KeyError as exc:
+        raise DriveError("unexpected create response format") from exc
 
 
 def delete_file(service: Any, *, file_id: str) -> None:
     try:
         service.files().delete(fileId=file_id).execute()
     except Exception as exc:  # noqa: BLE001
-        raise DriveError("delete failed") from exc
+        raise DriveError(api_failure("delete", exc)) from exc

@@ -173,41 +173,6 @@ def test_get_message_attachment_path_traversal_rejected(
         )
 
 
-def test_send_draft_to_user_email_succeeds(mock_gmail_service: MagicMock) -> None:
-    from hermes_google.core.mail import send_draft
-
-    send_call = MagicMock()
-    send_call.execute.return_value = {"id": "sent-1"}
-    mock_gmail_service.users().messages().send.return_value = send_call
-
-    result = send_draft(
-        mock_gmail_service,
-        to="jimmy@example.com",
-        subject="Draft: Re: invoice",
-        body="Here's your draft.",
-    )
-    assert result == "sent-1"
-    _, kwargs = mock_gmail_service.users().messages().send.call_args
-    assert kwargs["userId"] == "me"
-    assert "raw" in kwargs["body"]
-
-
-def test_send_draft_allows_any_recipient(mock_gmail_service: MagicMock) -> None:
-    from hermes_google.core.mail import send_draft
-
-    send_call = MagicMock()
-    send_call.execute.return_value = {"id": "sent-2"}
-    mock_gmail_service.users().messages().send.return_value = send_call
-
-    result = send_draft(
-        mock_gmail_service,
-        to="someone-else@example.com",
-        subject="x",
-        body="y",
-    )
-    assert result == "sent-2"
-
-
 def test_mark_read_removes_unread_label(mock_gmail_service: MagicMock) -> None:
     from hermes_google.core.mail import mark_read
 
@@ -234,28 +199,47 @@ def test_archive_removes_inbox_label(mock_gmail_service: MagicMock) -> None:
     assert kwargs["body"] == {"removeLabelIds": ["INBOX"]}
 
 
-def test_send_draft_with_in_reply_to_adds_threading_headers(
-    mock_gmail_service: MagicMock,
+def test_get_message_exposes_threading_and_recipient_headers(
+    tmp_path: Path, mock_gmail_service: MagicMock
 ) -> None:
-    from hermes_google.core.mail import send_draft
+    msg = EmailMessage()
+    msg["From"] = "Alice <alice@example.com>"
+    msg["To"] = "hermes@example.com"
+    msg["Cc"] = "Bob <bob@example.com>"
+    msg["Subject"] = "Direct"
+    msg["Message-ID"] = "<direct-1@example.com>"
+    msg["References"] = "<root@example.com>"
+    msg.set_content("Body.")
+    raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    get_call = MagicMock()
+    get_call.execute.return_value = {"id": "m1", "threadId": "t", "raw": raw_b64}
+    mock_gmail_service.users().messages().get.return_value = get_call
 
-    send_call = MagicMock()
-    send_call.execute.return_value = {"id": "sent-2"}
-    mock_gmail_service.users().messages().send.return_value = send_call
+    detail = get_message(mock_gmail_service, message_id="m1", cache_dir=tmp_path)
+    assert detail.rfc_message_id == "<direct-1@example.com>"
+    assert detail.references == "<root@example.com>"
+    assert detail.in_reply_to is None
+    assert detail.original_to == "hermes@example.com"
+    assert detail.original_cc == "Bob <bob@example.com>"
+    assert detail.original_reply_to is None
 
-    result = send_draft(
-        mock_gmail_service,
-        to="jimmy@example.com",
-        subject="Re: thread",
-        body="reply body",
-        in_reply_to="<original@example.com>",
-    )
-    assert result == "sent-2"
 
-    _, kwargs = mock_gmail_service.users().messages().send.call_args
-    # Decode the raw body and verify In-Reply-To + References headers are set
-    import base64 as _b64
+def test_get_message_without_cache_dir_skips_attachments(
+    mock_gmail_service: MagicMock, mocker
+) -> None:
+    msg = EmailMessage()
+    msg["From"] = "a@example.com"
+    msg["Subject"] = "With file"
+    msg.set_content("See attachment.")
+    msg.add_attachment(b"data", maintype="application", subtype="pdf", filename="f.pdf")
+    raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    get_call = MagicMock()
+    get_call.execute.return_value = {"id": "m1", "threadId": "t", "raw": raw_b64}
+    mock_gmail_service.users().messages().get.return_value = get_call
 
-    raw = _b64.urlsafe_b64decode(kwargs["body"]["raw"]).decode()
-    assert "In-Reply-To: <original@example.com>" in raw
-    assert "References: <original@example.com>" in raw
+    from hermes_google.core import mail as mail_module
+
+    walker = mocker.patch.object(mail_module, "_walk_attachments")
+    detail = get_message(mock_gmail_service, message_id="m1", cache_dir=None)
+    assert detail.attachment_paths == []
+    walker.assert_not_called()
