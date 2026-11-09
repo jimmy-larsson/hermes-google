@@ -253,12 +253,13 @@ def reply_context(detail: MessageDetail, *, user_email: str, hermes_email: str) 
         return good
 
     origin = parse(detail.original_reply_to) or parse(detail.original_sender)
-    if not origin:
-        raise MailError("original sender address unusable; pass to explicitly")
     own = {user_email.lower(), hermes_email.lower()}
-    to = _dedupe(origin + parse(detail.original_to), exclude=own)
-    if not to:
-        to = _dedupe(origin, exclude=set())
+    if origin:
+        to = _dedupe(origin + parse(detail.original_to), exclude=own) or _dedupe(
+            origin, exclude=set()
+        )
+    else:
+        to = []
     cc = _dedupe(parse(detail.original_cc), exclude=own | {r.addr.lower() for r in to})
 
     if detail.rfc_message_id:

@@ -277,9 +277,11 @@ def test_reply_context_drops_bad_header_entries_into_warning() -> None:
     assert "jörg@example.com" in ctx.warning
 
 
-def test_reply_context_fails_when_no_recipient_is_usable() -> None:
-    with pytest.raises(MailError, match="sender address unusable"):
-        _ctx(original_sender="Jörg <jörg@example.com>")
+def test_reply_context_yields_no_recipients_when_sender_is_unusable() -> None:
+    ctx = _ctx(original_sender="Jörg <jörg@example.com>")
+    assert ctx.to == []
+    assert ctx.warning is not None
+    assert "jörg@example.com" in ctx.warning
 
 
 def test_reply_context_keeps_comma_names_quoted_for_rendering() -> None:
@@ -670,9 +672,12 @@ def test_reply_context_keeps_author_when_an_unquoted_comma_name_precedes() -> No
     assert "Larsson" in ctx.warning
 
 
-def test_reply_context_fails_when_sender_header_is_malformed_even_with_to() -> None:
-    with pytest.raises(MailError, match="sender address unusable"):
-        _ctx(original_sender="a@x.com b@x.com", original_to="Carol <c@x.com>")
+def test_reply_context_does_not_promote_to_when_sender_header_is_malformed() -> None:
+    ctx = _ctx(original_sender="a@x.com b@x.com", original_to="Carol <c@x.com>")
+    assert ctx.to == []
+    assert ctx.cc == []
+    assert ctx.warning is not None
+    assert "a@x.com b@x.com" in ctx.warning
 
 
 def test_reply_context_rejects_only_the_bad_cc_token() -> None:
