@@ -122,7 +122,7 @@ Returns the base64url-encoded RFC 822 message Gmail expects in `message.raw`. Al
 
 ### 5.5 Server instructions
 
-Policy 2 becomes: "No send capability: this server creates drafts in the Hermes account's Gmail only; the user reviews and sends from Gmail. Present the draft content in chat before creating it. Revise an existing draft with `mail_update_draft` rather than deleting and recreating it. Call `mail_delete_draft` only when replacing a draft the user has reviewed or when the user explicitly asks to discard one." Policy 4's confirm-first list adds the four draft tools, `drive_rename` and `drive_create_folder`. Policy 1's "after delivering a draft" becomes "after creating a draft".
+Policy 2 becomes: "No send capability: this server creates drafts in the Hermes account's Gmail only; the user reviews and sends from Gmail. Present the draft content (recipients, subject and body) in chat before creating it. Revise an existing draft with `mail_update_draft` rather than deleting and recreating it. Call `mail_delete_draft` only when replacing a draft the user has reviewed or when the user explicitly asks to discard one." Policy 4's confirm-first list adds the four draft tools, `drive_rename` and `drive_create_folder`. Policy 1's "after delivering a draft" becomes "after creating a draft".
 
 Other text that still refers to sending is updated in the same commit: the `mail_get` docstring sentence telling Hermes to use `sender` as the `to` for replies, the `mcp_server.py` module docstring, and the README's pointer to the design spec, which links this one next to the original.
 

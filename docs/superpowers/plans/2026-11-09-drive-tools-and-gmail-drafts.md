@@ -2315,10 +2315,11 @@ In `src/hermes_google/mcp_server.py`:
 
 2. No send capability — this server creates drafts in the Hermes account's
    Gmail only (`mail_create_draft`, `mail_create_reply_draft`); the user
-   reviews and sends them from Gmail. Present the draft content in chat before
-   creating it. Revise an existing draft with `mail_update_draft` rather than
-   deleting and recreating it. Call `mail_delete_draft` only when replacing a
-   draft the user has reviewed or when the user explicitly asks to discard one.
+   reviews and sends them from Gmail. Present the draft content (recipients,
+   subject and body) in chat before creating it. Revise an existing draft with
+   `mail_update_draft` rather than deleting and recreating it. Call
+   `mail_delete_draft` only when replacing a draft the user has reviewed or
+   when the user explicitly asks to discard one.
 ```
 
 ```
