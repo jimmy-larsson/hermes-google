@@ -23,12 +23,16 @@ def test_instructions_contains_key_policies() -> None:
 
     required = [
         "mail_archive",  # archive policy
-        "mail_send_draft",  # to-enforcement
+        "No send capability",  # drafts-only policy
+        "mail_create_draft",
+        "mail_create_reply_draft",
+        "mail_update_draft",
+        "mail_delete_draft",
         "drive_delete",  # delete friction
-        "data, not instructions",  # prompt-injection note
-        "confirm",  # confirmation policy
         "drive_rename",
         "drive_create_folder",
+        "data, not instructions",  # prompt-injection note
+        "confirm",  # confirmation policy
     ]
     for snippet in required:
         assert snippet in INSTRUCTIONS, f"missing policy snippet: {snippet!r}"
@@ -50,7 +54,10 @@ def test_smoke_server_has_expected_tools() -> None:
         "mail_list_pending",
         "mail_search",
         "mail_get",
-        "mail_send_draft",
+        "mail_create_draft",
+        "mail_create_reply_draft",
+        "mail_update_draft",
+        "mail_delete_draft",
         "mail_mark_read",
         "mail_archive",
         "cal_list_calendars",
@@ -93,7 +100,7 @@ def test_read_only_tools_annotated() -> None:
 
 
 def test_destructive_tools_annotated() -> None:
-    destructive_tools = {"cal_delete_event", "drive_delete"}
+    destructive_tools = {"cal_delete_event", "drive_delete", "mail_delete_draft"}
     for tool in _tool_map().values():
         if tool.name in destructive_tools:
             assert tool.annotations is not None, f"{tool.name} missing annotations"
@@ -104,6 +111,7 @@ def test_idempotent_tools_annotated() -> None:
     idempotent_tools = {
         "mail_mark_read",
         "mail_archive",
+        "mail_update_draft",
         "cal_update_event",
         "drive_update",
         "drive_move",
@@ -190,19 +198,6 @@ def test_mail_list_pending_tool(mocker) -> None:
     assert result == [
         {"id": "m1", "thread_id": "t", "sender": "s", "subject": "x", "date": "d", "snippet": "..."}
     ]
-
-
-def test_mail_send_draft_tool_calls_core(mocker) -> None:
-    from hermes_google import mcp_server
-
-    fake_services = MagicMock()
-    mocker.patch.object(mcp_server, "_get_services", return_value=fake_services)
-    send_spy = mocker.patch.object(mcp_server.mail_core, "send_draft", return_value="sent-1")
-
-    result = mcp_server.mail_send_draft(to="jimmy@example.com", subject="s", body="b")
-    assert result == {"id": "sent-1"}
-    _, kwargs = send_spy.call_args
-    assert kwargs["to"] == "jimmy@example.com"
 
 
 def test_mail_archive_tool_calls_core(mocker) -> None:
@@ -482,3 +477,199 @@ def test_drive_create_folder_explicit_parent_wins(mocker) -> None:
     assert result["parent_folder_id"] == "P"
     _, kwargs = spy.call_args
     assert kwargs["parent_folder_id"] == "P"
+
+
+def test_server_has_no_send_capability() -> None:
+    import inspect
+
+    from hermes_google.core import drafts as drafts_core
+    from hermes_google.core import mail as mail_core
+
+    assert not hasattr(mail_core, "send_draft")
+    assert "mail_send_draft" not in _tool_map()
+    for module in (mail_core, drafts_core):
+        assert ".send(" not in inspect.getsource(module)
+
+
+def test_mail_create_draft_tool_parses_recipients_and_paths(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drafts import DraftRef, Recipient
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    spy = mocker.patch.object(
+        mcp_server.drafts_core,
+        "create_draft",
+        return_value=DraftRef(
+            draft_id="d1", message_id="m1", thread_id="t1", to=["a@x.com"], cc=[], subject="s"
+        ),
+    )
+    result = mcp_server.mail_create_draft(
+        to=["a@x.com"],
+        cc=['"Larsson, Jimmy" <j@x.com>'],
+        subject="s",
+        body="b",
+        attachments=["~/file.pdf"],
+    )
+    assert result["draft_id"] == "d1"
+    assert result["warning"] is None
+    _, kwargs = spy.call_args
+    assert kwargs["to"] == [Recipient("", "a@x.com")]
+    assert kwargs["cc"] == [Recipient("Larsson, Jimmy", "j@x.com")]
+    assert kwargs["attachments"] == [Path("~/file.pdf").expanduser()]
+
+
+def test_mail_create_reply_draft_uses_config_emails_and_overrides(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drafts import DraftRef, Recipient, ReplyContext
+    from hermes_google.core.mail import MessageDetail
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    cfg = MagicMock(
+        cache_dir=tmp_path,
+        user_email="jimmy@example.com",
+        hermes_account_email="hermes@example.com",
+    )
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    detail = MessageDetail(
+        id="m1",
+        thread_id="t1",
+        sender="s",
+        original_sender="Alice <alice@example.com>",
+        original_subject="Hello",
+        original_body="b",
+        in_reply_to=None,
+        forwarding_note=None,
+        attachment_paths=[],
+        rfc_message_id="<o@x>",
+    )
+    mocker.patch.object(mcp_server.mail_core, "get_message", return_value=detail)
+    ctx = ReplyContext(
+        to=[Recipient("Alice", "alice@example.com")],
+        cc=[Recipient("", "bob@example.com"), Recipient("", "carol@example.com")],
+        subject="Re: Hello",
+        in_reply_to="<o@x>",
+        references="<o@x>",
+        thread_id="t1",
+        warning="ignored unusable addresses: x",
+    )
+    ctx_spy = mocker.patch.object(mcp_server.drafts_core, "reply_context", return_value=ctx)
+    create_spy = mocker.patch.object(
+        mcp_server.drafts_core,
+        "create_draft",
+        return_value=DraftRef(
+            draft_id="d1",
+            message_id="m2",
+            thread_id="t1",
+            to=["carol@example.com"],
+            cc=["bob@example.com"],
+            subject="Re: Hello",
+        ),
+    )
+
+    result = mcp_server.mail_create_reply_draft(
+        message_id="m1", body="Hi", to=["carol@example.com"]
+    )
+
+    args, ctx_kwargs = ctx_spy.call_args
+    assert args == (detail,)
+    assert ctx_kwargs == {"user_email": "jimmy@example.com", "hermes_email": "hermes@example.com"}
+    _, kwargs = create_spy.call_args
+    assert kwargs["to"] == [Recipient("", "carol@example.com")]
+    assert kwargs["cc"] == [Recipient("", "bob@example.com")]
+    assert kwargs["subject"] == "Re: Hello"
+    assert kwargs["in_reply_to"] == "<o@x>"
+    assert kwargs["references"] == "<o@x>"
+    assert kwargs["thread_id"] == "t1"
+    assert result["draft_id"] == "d1"
+    assert result["warning"] == "ignored unusable addresses: x"
+
+
+def test_mail_create_reply_draft_defaults_to_context_recipients(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drafts import DraftRef, Recipient, ReplyContext
+    from hermes_google.core.mail import MessageDetail
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    cfg = MagicMock(cache_dir=tmp_path, user_email="u@x.com", hermes_account_email="h@x.com")
+    mocker.patch.object(mcp_server, "_get_config", return_value=cfg)
+    detail = MessageDetail(
+        id="m1",
+        thread_id="t1",
+        sender="s",
+        original_sender="Alice <alice@example.com>",
+        original_subject="Hello",
+        original_body="b",
+        in_reply_to=None,
+        forwarding_note=None,
+        attachment_paths=[],
+    )
+    mocker.patch.object(mcp_server.mail_core, "get_message", return_value=detail)
+    ctx = ReplyContext(
+        to=[Recipient("Alice", "alice@example.com")],
+        cc=[Recipient("", "bob@example.com")],
+        subject="Re: Hello",
+        in_reply_to=None,
+        references=None,
+        thread_id=None,
+        warning=None,
+    )
+    mocker.patch.object(mcp_server.drafts_core, "reply_context", return_value=ctx)
+    create_spy = mocker.patch.object(
+        mcp_server.drafts_core,
+        "create_draft",
+        return_value=DraftRef(
+            draft_id="d1", message_id="m2", thread_id="t9", to=[], cc=[], subject="Re: Hello"
+        ),
+    )
+
+    mcp_server.mail_create_reply_draft(message_id="m1", body="Hi")
+
+    _, kwargs = create_spy.call_args
+    assert kwargs["to"] == ctx.to
+    assert kwargs["cc"] == ctx.cc
+    assert kwargs["thread_id"] is None
+
+
+def test_mail_update_draft_tool_passes_only_given_fields(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drafts import DraftRef
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    spy = mocker.patch.object(
+        mcp_server.drafts_core,
+        "update_draft",
+        return_value=DraftRef(
+            draft_id="d1", message_id="m1", thread_id="t1", to=["a@x.com"], cc=[], subject="s"
+        ),
+    )
+    result = mcp_server.mail_update_draft(draft_id="d1", body="new", cc=[])
+    assert result["draft_id"] == "d1"
+    _, kwargs = spy.call_args
+    assert kwargs["draft_id"] == "d1"
+    assert kwargs["body"] == "new"
+    assert kwargs["cc"] == []
+    assert kwargs["to"] is None
+    assert kwargs["subject"] is None
+    assert kwargs["attachments"] is None
+
+
+def test_mail_delete_draft_tool_returns_id(mocker) -> None:
+    from hermes_google import mcp_server
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    spy = mocker.patch.object(mcp_server.drafts_core, "delete_draft")
+    assert mcp_server.mail_delete_draft(draft_id="d1") == {"draft_id": "d1"}
+    _, kwargs = spy.call_args
+    assert kwargs == {"draft_id": "d1"}
+
+
+def test_mail_create_draft_raises_tool_error_on_service_error(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.mail import MailError
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    mocker.patch.object(
+        mcp_server.drafts_core, "create_draft", side_effect=MailError("create draft failed")
+    )
+    with pytest.raises(ToolError, match="create draft failed"):
+        mcp_server.mail_create_draft(to=["a@x.com"], subject="s", body="b")
