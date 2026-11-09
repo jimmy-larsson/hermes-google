@@ -43,7 +43,7 @@ def api_failure(action: str, exc: BaseException) -> str
 - `googleapiclient.errors.HttpError`: `"<action> failed: HTTP <status_code> <reason>"`.
 - anything else: `"<action> failed: <ExceptionType>: <exc>"`.
 
-Every `raise DriveError("x failed") from exc` and `raise MailError("x failed") from exc` becomes `raise DriveError(api_failure("x", exc)) from exc`. Existing messages are reworded to the `<action> failed: ...` form, keeping their context inside the action (for example `fetch message <id> failed: HTTP 404 Requested entity was not found.`). FastMCP's `mask_error_details` masks unexpected exceptions only; `ToolError` messages produced by `_auto_retry` pass through, so Hermes sees the reason.
+Every `raise DriveError("x failed") from exc` and `raise MailError("x failed") from exc` becomes `raise DriveError(api_failure("x", exc)) from exc`. `upload_file` and `update_file` build their `MediaFileUpload` inside the `try`, so a missing local file is reported as `upload failed: FileNotFoundError: ...` instead of escaping as a masked error (Mimir task #1112, added to the release by Jimmy on 2026-11-09). Existing messages are reworded to the `<action> failed: ...` form, keeping their context inside the action (for example `fetch message <id> failed: HTTP 404 Requested entity was not found.`). FastMCP's `mask_error_details` masks unexpected exceptions only; `ToolError` messages produced by `_auto_retry` pass through, so Hermes sees the reason.
 
 ## 4. Drive
 
@@ -155,7 +155,7 @@ The server `INSTRUCTIONS` string is updated per 5.5. The MCP tool docstrings are
 
 ## 8. Release and rollout
 
-Branch `feat/drive-tools-gmail-drafts`, one PR to `main`, one commit per change: ignore rule for worktrees, this spec, scopes and token check, API error reasons, Drive name validation and rename, create-folder, forward header parsing, Gmail drafts replacing send, README, version bump to 0.4.0.
+Branch `feat/drive-tools-gmail-drafts`, one PR to `main`, one commit per change: ignore rule for worktrees, this spec, scopes and token check, API error reasons, Drive name validation and rename, create-folder, forward header parsing, Gmail drafts replacing send, README, the missing-local-file fix for upload and update, version bump to 0.4.0.
 
 Rollout, each step confirmed with Jimmy:
 
