@@ -313,10 +313,11 @@ def test_upload_file_rejects_unsafe_name(
 ) -> None:
     local = tmp_path / "notes.md"
     local.write_text("hello")
-    mocker.patch("hermes_google.core.drive.MediaFileUpload")
+    media_cls = mocker.patch("hermes_google.core.drive.MediaFileUpload")
 
     with pytest.raises(DriveError, match="invalid name"):
         upload_file(mock_drive_service, local_path=local, name="../x", parent_folder_id="FOLDER")
+    media_cls.assert_not_called()
     mock_drive_service.files().create.assert_not_called()
 
 
