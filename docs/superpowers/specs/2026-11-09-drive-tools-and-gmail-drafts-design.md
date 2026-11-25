@@ -49,7 +49,7 @@ Every `raise DriveError("x failed") from exc` and `raise MailError("x failed") f
 
 ### 4.1 Name validation (`core/drive.py`)
 
-`_is_unsafe_name(name: str) -> bool` is true for an empty name, `"."`, `".."`, and any name containing a forward slash or a backslash. `get_file` uses it in place of its inline checks on downloaded names, without stripping, so its behaviour and its `unsafe filename` error message do not change. `_validate_name(name: str) -> str` is for user input: it strips surrounding whitespace, applies the predicate to the result, and raises `DriveError("invalid name: <repr>")`, so whitespace-only names are rejected too.
+`_is_unsafe_name(name: str) -> bool` is true for an empty name, `"."`, `".."`, and any name containing a forward slash or a backslash. `get_file` uses it in place of its inline checks on downloaded names, without stripping, so its behaviour and its `unsafe filename` error message do not change. `_validate_name(name: str) -> str` is for user input: it strips surrounding whitespace, applies the predicate to the result, and raises `DriveError("invalid name: <repr>")`, so whitespace-only names are rejected too. `upload_file` validates its `name` the same way before any network call, so every name Hermes gives a file is one `get_file` will accept (Mimir task #1121, added to the release by Jimmy on 2026-11-25).
 
 ### 4.2 Core functions (`core/drive.py`)
 
