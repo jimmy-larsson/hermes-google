@@ -112,6 +112,7 @@ def upload_file(
     name: str,
     parent_folder_id: str | None = None,
 ) -> str:
+    name = _validate_name(name)
     body: dict[str, Any] = {"name": name}
     if parent_folder_id:
         body["parents"] = [parent_folder_id]

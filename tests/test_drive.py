@@ -306,3 +306,28 @@ def test_update_file_missing_local_file_raises_drive_error(
     with pytest.raises(DriveError, match="update failed: FileNotFoundError"):
         update_file(mock_drive_service, file_id="f1", local_path=tmp_path / "missing.md")
     mock_drive_service.files().update.assert_not_called()
+
+
+def test_upload_file_rejects_unsafe_name(
+    tmp_path: Path, mock_drive_service: MagicMock, mocker
+) -> None:
+    local = tmp_path / "notes.md"
+    local.write_text("hello")
+    mocker.patch("hermes_google.core.drive.MediaFileUpload")
+
+    with pytest.raises(DriveError, match="invalid name"):
+        upload_file(mock_drive_service, local_path=local, name="../x", parent_folder_id="FOLDER")
+    mock_drive_service.files().create.assert_not_called()
+
+
+def test_upload_file_strips_the_name(tmp_path: Path, mock_drive_service: MagicMock, mocker) -> None:
+    local = tmp_path / "notes.md"
+    local.write_text("hello")
+    mocker.patch("hermes_google.core.drive.MediaFileUpload")
+    call = MagicMock()
+    call.execute.return_value = {"id": "new-1"}
+    mock_drive_service.files().create.return_value = call
+
+    upload_file(mock_drive_service, local_path=local, name="  notes.md ")
+    _, kwargs = mock_drive_service.files().create.call_args
+    assert kwargs["body"]["name"] == "notes.md"
