@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import google_auth_httplib2
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -70,7 +71,12 @@ def load_credentials(path: Path) -> Credentials:
     creds = Credentials.from_authorized_user_file(str(path), scopes=list(SCOPES))
     if not creds.valid:
         if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except RefreshError as exc:
+                raise AuthError(
+                    "credentials rejected by Google; run `hermes-google auth login`"
+                ) from exc
             save_credentials(creds, path)
         else:
             raise AuthError(
