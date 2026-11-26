@@ -146,8 +146,9 @@ capability: Gmail writes are drafts in the Hermes mailbox, and you send them.
 ### Data retention
 
 Attachments fetched by `mail_get` and `drive_get` are cached under
-`~/.cache/hermes-google/`. Files older than 30 days are deleted whenever the
-server starts, and `hermes-google auth revoke` clears the cache along with the
+`~/.cache/hermes-google/`. Files older than 30 days are deleted the first time
+the server connects to Google after starting (and again whenever it reloads its
+credentials), and `hermes-google auth revoke` clears the cache along with the
 token, matching the retention limits in Google's Workspace AI Tools Addendum.
 
 ## Debug CLI
