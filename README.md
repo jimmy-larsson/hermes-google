@@ -124,7 +124,8 @@ account's Gmail settings.
   account (editor access to rename or move your own files). Set
   `[drive].default_parent_folder_id` in `config.toml` to the shared folder so
   uploads and new folders land where you can see them; without it they go to
-  the Hermes account's own My Drive root.
+  the Hermes account's own My Drive root. Google Docs, Sheets and Slides are
+  exported on download (Markdown, CSV and PDF by default).
 
 ## Usage
 

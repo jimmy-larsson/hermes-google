@@ -332,3 +332,118 @@ def test_upload_file_strips_the_name(tmp_path: Path, mock_drive_service: MagicMo
     upload_file(mock_drive_service, local_path=local, name="  notes.md ")
     _, kwargs = mock_drive_service.files().create.call_args
     assert kwargs["body"]["name"] == "notes.md"
+
+
+def _native_meta(mock_drive_service: MagicMock, name: str, mime_type: str) -> None:
+    meta_call = MagicMock()
+    meta_call.execute.return_value = {"id": "g1", "name": name, "mimeType": mime_type}
+    mock_drive_service.files().get.return_value = meta_call
+
+
+def _fake_download(mocker, payload: bytes = b"exported") -> None:
+    def _downloader(fh, request):  # noqa: ARG001
+        fh.write(payload)
+        instance = MagicMock()
+        instance.next_chunk.side_effect = [(MagicMock(progress=lambda: 1.0), True)]
+        return instance
+
+    mocker.patch("hermes_google.core.drive.MediaIoBaseDownload", side_effect=_downloader)
+
+
+@pytest.mark.parametrize(
+    ("mime_type", "export_type", "suffix"),
+    [
+        ("application/vnd.google-apps.document", "text/markdown", ".md"),
+        ("application/vnd.google-apps.spreadsheet", "text/csv", ".csv"),
+        ("application/vnd.google-apps.presentation", "application/pdf", ".pdf"),
+    ],
+)
+def test_get_file_exports_native_files_with_defaults(
+    tmp_path: Path,
+    mock_drive_service: MagicMock,
+    mocker,
+    mime_type: str,
+    export_type: str,
+    suffix: str,
+) -> None:
+    _native_meta(mock_drive_service, "What receipts do I send?", mime_type)
+    _fake_download(mocker)
+
+    path = get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+
+    assert path == tmp_path / "drive" / "g1" / ("What receipts do I send?" + suffix)
+    assert path.read_bytes() == b"exported"
+    _, kwargs = mock_drive_service.files().export_media.call_args
+    assert kwargs == {"fileId": "g1", "mimeType": export_type}
+    mock_drive_service.files().get_media.assert_not_called()
+
+
+def test_get_file_export_override(tmp_path: Path, mock_drive_service: MagicMock, mocker) -> None:
+    _native_meta(mock_drive_service, "Plan", "application/vnd.google-apps.document")
+    _fake_download(mocker)
+
+    path = get_file(
+        mock_drive_service, file_id="g1", cache_dir=tmp_path, export_mime_type="application/pdf"
+    )
+
+    assert path.name == "Plan.pdf"
+    _, kwargs = mock_drive_service.files().export_media.call_args
+    assert kwargs["mimeType"] == "application/pdf"
+
+
+def test_get_file_does_not_double_the_extension(
+    tmp_path: Path, mock_drive_service: MagicMock, mocker
+) -> None:
+    _native_meta(mock_drive_service, "Notes.md", "application/vnd.google-apps.document")
+    _fake_download(mocker)
+    path = get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+    assert path.name == "Notes.md"
+
+
+def test_get_file_native_type_without_default_needs_export_type(
+    tmp_path: Path, mock_drive_service: MagicMock
+) -> None:
+    _native_meta(mock_drive_service, "Sketch", "application/vnd.google-apps.drawing")
+    with pytest.raises(DriveError, match="pass export_mime_type"):
+        get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+    mock_drive_service.files().export_media.assert_not_called()
+    mock_drive_service.files().get_media.assert_not_called()
+
+
+def test_get_file_refuses_a_folder(tmp_path: Path, mock_drive_service: MagicMock) -> None:
+    _native_meta(mock_drive_service, "Folder", "application/vnd.google-apps.folder")
+    with pytest.raises(DriveError, match="cannot download a folder"):
+        get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+
+
+def test_get_file_binary_still_uses_get_media(
+    tmp_path: Path, mock_drive_service: MagicMock, mocker
+) -> None:
+    _native_meta(mock_drive_service, "scan.pdf", "application/pdf")
+    _fake_download(mocker, b"%PDF")
+    path = get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+    assert path.name == "scan.pdf"
+    mock_drive_service.files().get_media.assert_called_once_with(fileId="g1")
+    mock_drive_service.files().export_media.assert_not_called()
+
+
+def test_get_file_download_failure_reports_reason_and_removes_partial(
+    tmp_path: Path, mock_drive_service: MagicMock, mocker
+) -> None:
+    _native_meta(mock_drive_service, "scan.pdf", "application/pdf")
+    resp = httplib2.Response({"status": 403, "reason": "Forbidden"})
+    content = (
+        b'{"error": {"code": 403, "message": "The user does not have sufficient permissions."}}'
+    )
+
+    def _downloader(fh, request):  # noqa: ARG001
+        fh.write(b"partial")
+        instance = MagicMock()
+        instance.next_chunk.side_effect = HttpError(resp, content, uri="u")
+        return instance
+
+    mocker.patch("hermes_google.core.drive.MediaIoBaseDownload", side_effect=_downloader)
+
+    with pytest.raises(DriveError, match="download failed: HTTP 403 The user does not have"):
+        get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+    assert not (tmp_path / "drive" / "g1" / "scan.pdf").exists()
