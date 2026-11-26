@@ -798,3 +798,34 @@ def test_drive_get_passes_export_type_through(mocker, tmp_path) -> None:
     assert result["path"].endswith("Plan.pdf")
     _, kwargs = spy.call_args
     assert kwargs["export_mime_type"] == "application/pdf"
+
+
+def test_auto_retry_does_not_repeat_non_auth_failures(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drive import DriveError
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    spy = mocker.patch.object(
+        mcp_server.drive_core, "delete_file", side_effect=DriveError("delete failed: HTTP 500 x")
+    )
+    reset = mocker.patch.object(mcp_server, "_reset_services")
+
+    with pytest.raises(ToolError, match="delete failed"):
+        mcp_server.drive_delete(file_id="f1")
+    assert spy.call_count == 1
+    reset.assert_not_called()
+
+
+def test_auto_retry_reloads_once_on_auth_error(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.auth import AuthError
+
+    services = mocker.patch.object(
+        mcp_server, "_get_services", side_effect=[AuthError("stale"), MagicMock()]
+    )
+    reset = mocker.patch.object(mcp_server, "_reset_services")
+    mocker.patch.object(mcp_server.mail_core, "list_pending", return_value=[])
+
+    assert mcp_server.mail_list_pending() == []
+    assert services.call_count == 2
+    reset.assert_called_once()
