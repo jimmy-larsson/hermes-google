@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,31 @@ def _to_ref(item: dict[str, Any]) -> FileRef:
 
 _REF_FIELDS = "id,name,mimeType"
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
+_NATIVE_PREFIX = "application/vnd.google-apps."
+_EXPORT_DEFAULTS = {
+    "application/vnd.google-apps.document": "text/markdown",
+    "application/vnd.google-apps.spreadsheet": "text/csv",
+    "application/vnd.google-apps.presentation": "application/pdf",
+}
+_EXPORT_EXTENSIONS = {"text/markdown": ".md", "text/csv": ".csv", "application/pdf": ".pdf"}
+
+
+def _export_type(mime_type: str, export_mime_type: str | None) -> str | None:
+    if not mime_type.startswith(_NATIVE_PREFIX):
+        return None
+    if mime_type == FOLDER_MIME_TYPE:
+        raise DriveError("cannot download a folder; use drive_list")
+    chosen = export_mime_type or _EXPORT_DEFAULTS.get(mime_type)
+    if not chosen:
+        raise DriveError(f"cannot download {mime_type}: pass export_mime_type")
+    return chosen
+
+
+def _with_extension(name: str, export_mime_type: str) -> str:
+    ext = _EXPORT_EXTENSIONS.get(export_mime_type) or mimetypes.guess_extension(export_mime_type)
+    if not ext or name.lower().endswith(ext):
+        return name
+    return name + ext
 
 
 def _is_unsafe_name(name: str) -> bool:
@@ -76,13 +102,22 @@ def list_folder(service: Any, *, folder_id: str, limit: int = 50) -> list[FileRe
     return [_to_ref(i) for i in resp.get("files", [])]
 
 
-def get_file(service: Any, *, file_id: str, cache_dir: Path) -> Path:
+def get_file(
+    service: Any,
+    *,
+    file_id: str,
+    cache_dir: Path,
+    export_mime_type: str | None = None,
+) -> Path:
     try:
         meta = service.files().get(fileId=file_id, fields="id,name,mimeType").execute()
     except Exception as exc:  # noqa: BLE001
         raise DriveError(api_failure("get metadata", exc)) from exc
 
+    export_as = _export_type(meta.get("mimeType", ""), export_mime_type)
     raw_name = meta["name"]
+    if export_as:
+        raw_name = _with_extension(raw_name, export_as)
     safe_name = os.path.basename(raw_name)
     if safe_name != raw_name or _is_unsafe_name(safe_name):
         raise DriveError(f"unsafe filename: {raw_name!r}")
@@ -95,13 +130,20 @@ def get_file(service: Any, *, file_id: str, cache_dir: Path) -> Path:
     if not str(target.resolve()).startswith(str(target_dir.resolve()) + os.sep):
         raise DriveError(f"unsafe filename: {raw_name!r}")
 
+    if export_as:
+        request = service.files().export_media(fileId=file_id, mimeType=export_as)
+    else:
+        request = service.files().get_media(fileId=file_id)
     # I3: stream directly to disk — avoid buffering the full file in RAM.
-    request = service.files().get_media(fileId=file_id)
-    with target.open("wb") as fh:
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _status, done = downloader.next_chunk()
+    try:
+        with target.open("wb") as fh:
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _status, done = downloader.next_chunk()
+    except Exception as exc:  # noqa: BLE001
+        target.unlink(missing_ok=True)
+        raise DriveError(api_failure("export" if export_as else "download", exc)) from exc
     return target
 
 

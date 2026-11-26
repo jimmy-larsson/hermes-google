@@ -784,3 +784,17 @@ def test_paths_expands_home_and_makes_absolute() -> None:
     assert all(p.is_absolute() for p in paths)
     assert str(paths[0]).endswith("~unknownuser-xyz/x.pdf")
     assert mcp_server._paths(None) is None
+
+
+def test_drive_get_passes_export_type_through(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    mocker.patch.object(mcp_server, "_get_config", return_value=MagicMock(cache_dir=tmp_path))
+    spy = mocker.patch.object(
+        mcp_server.drive_core, "get_file", return_value=tmp_path / "drive" / "g1" / "Plan.pdf"
+    )
+    result = mcp_server.drive_get(file_id="g1", export_mime_type="application/pdf")
+    assert result["path"].endswith("Plan.pdf")
+    _, kwargs = spy.call_args
+    assert kwargs["export_mime_type"] == "application/pdf"

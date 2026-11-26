@@ -558,8 +558,14 @@ def drive_list(
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False})
 @_auto_retry
-def drive_get(file_id: str) -> dict[str, Any]:
+def drive_get(file_id: str, export_mime_type: str | None = None) -> dict[str, Any]:
     """Download a Drive file to the local cache directory.
+
+    Google Docs, Sheets and Slides are exported: Docs as Markdown, Sheets as
+    CSV (first sheet only), Slides as PDF. Pass `export_mime_type` for another
+    format, for example `application/pdf` for a Doc or
+    `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` for a
+    Sheet with several tabs. Other Google-native types need `export_mime_type`.
 
     The file is saved to ~/.cache/hermes-google/drive/<file_id>/<filename>.
     Use Claude Code's Read tool on the returned path to view the contents.
@@ -568,7 +574,12 @@ def drive_get(file_id: str) -> dict[str, Any]:
     """
     services = _get_services()
     cfg = _get_config()
-    path = drive_core.get_file(services.drive, file_id=file_id, cache_dir=cfg.cache_dir)
+    path = drive_core.get_file(
+        services.drive,
+        file_id=file_id,
+        cache_dir=cfg.cache_dir,
+        export_mime_type=export_mime_type,
+    )
     return {"path": str(path)}
 
 
