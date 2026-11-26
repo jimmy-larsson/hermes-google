@@ -67,9 +67,13 @@ def cmd_auth_status(_args: argparse.Namespace) -> int:
 def cmd_auth_revoke(_args: argparse.Namespace) -> int:
     cfg = _cfg()
     auth_core.revoke_credentials(cfg.credentials_path)
-    cache_core.clear_cache(cfg.cache_dir)
+    leftovers = cache_core.clear_cache(cfg.cache_dir)
     print(f"credentials removed at {cfg.credentials_path}")
-    print(f"cache cleared at {cfg.cache_dir}")
+    if leftovers:
+        names = ", ".join(str(p) for p in leftovers)
+        print(f"cache partly cleared at {cfg.cache_dir}; could not remove: {names}")
+    else:
+        print(f"cache cleared at {cfg.cache_dir}")
     return 0
 
 

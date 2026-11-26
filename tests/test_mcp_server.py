@@ -842,11 +842,13 @@ def test_get_services_prunes_the_cache_once_per_build(mocker, tmp_path) -> None:
     mocker.patch.object(mcp_server.auth_core, "build_services", return_value=MagicMock())
     prune = mocker.patch.object(mcp_server.cache_core, "prune_cache", return_value=0)
 
-    mcp_server._get_services()
-    mcp_server._get_services()
+    try:
+        mcp_server._get_services()
+        mcp_server._get_services()
 
-    prune.assert_called_once_with(tmp_path)
-    mcp_server._reset_services()
+        prune.assert_called_once_with(tmp_path)
+    finally:
+        mcp_server._reset_services()
 
 
 def _with_cause(exc: Exception, cause: Exception) -> Exception:
