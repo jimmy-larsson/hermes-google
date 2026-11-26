@@ -109,23 +109,26 @@ def _reset_services() -> None:
 
 
 def _auto_retry(fn):
-    """Retry once with fresh credentials on service failure.
+    """Retry once with fresh credentials when the stored token was replaced.
 
     After ``auth login`` writes a new token.json the cached credentials are
-    stale.  On the first ServiceError we drop the cache and retry; the
-    second attempt loads the new token from disk.
+    stale and fail with AuthError; the cache is dropped and the call runs
+    again against the new token.  Any other ServiceError is reported at
+    once, so a request that reached Google is never repeated.
     """
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except ServiceError:
+        except AuthError:
             _reset_services()
             try:
                 return fn(*args, **kwargs)
             except ServiceError as exc:
                 raise ToolError(str(exc)) from exc
+        except ServiceError as exc:
+            raise ToolError(str(exc)) from exc
 
     return wrapper
 
