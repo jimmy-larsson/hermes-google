@@ -143,6 +143,13 @@ Once installed, the following tools are available to Hermes in every session:
 All write operations require user confirmation. The server has no send
 capability: Gmail writes are drafts in the Hermes mailbox, and you send them.
 
+### Data retention
+
+Attachments fetched by `mail_get` and `drive_get` are cached under
+`~/.cache/hermes-google/`. Files older than 30 days are deleted whenever the
+server starts, and `hermes-google auth revoke` clears the cache along with the
+token, matching the retention limits in Google's Workspace AI Tools Addendum.
+
 ## Debug CLI
 
 Same operations via shell:
@@ -162,7 +169,7 @@ Any one of these fully cuts an integration surface:
 - Delete the forwarding filter in your personal Gmail
 - Unshare your calendar with the Hermes account
 - Unshare a Drive file or folder
-- `hermes-google auth revoke` — removes the refresh token locally
+- `hermes-google auth revoke`: removes the refresh token locally and clears the attachment cache
 - `claude mcp remove hermes-google` — Hermes loses the tools; Google data
   untouched
 - Delete the Hermes Google account entirely

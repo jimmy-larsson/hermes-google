@@ -20,6 +20,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from hermes_google.core import auth as auth_core
+from hermes_google.core import cache as cache_core
 from hermes_google.core import cal as cal_core
 from hermes_google.core import drafts as drafts_core
 from hermes_google.core import drive as drive_core
@@ -96,8 +97,10 @@ def _get_credentials():
 def _get_services() -> Services:
     global _services
     if _services is None:
+        cfg = _get_config()
         creds = _get_credentials()
         _services = auth_core.build_services(creds)
+        cache_core.prune_cache(cfg.cache_dir)
     return _services
 
 
