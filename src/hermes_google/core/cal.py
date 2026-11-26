@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from hermes_google.core.errors import ServiceError
+from hermes_google.core.errors import ServiceError, api_failure
 
 
 class CalendarError(ServiceError):
@@ -42,7 +42,7 @@ def list_calendars(service: Any) -> list[CalendarRef]:
     try:
         resp = service.calendarList().list().execute()
     except Exception as exc:  # noqa: BLE001
-        raise CalendarError("failed to list calendars") from exc
+        raise CalendarError(api_failure("list calendars", exc)) from exc
     return [
         CalendarRef(id=i["id"], summary=i.get("summary", ""), access_role=i.get("accessRole", ""))
         for i in resp.get("items", [])
@@ -75,7 +75,7 @@ def list_events(
             .execute()
         )
     except Exception as exc:  # noqa: BLE001
-        raise CalendarError("failed to list events") from exc
+        raise CalendarError(api_failure("list events", exc)) from exc
     return [_to_event(i) for i in resp.get("items", [])]
 
 
@@ -101,7 +101,7 @@ def create_event(
     try:
         resp = service.events().insert(calendarId=calendar_id, body=body).execute()
     except Exception as exc:  # noqa: BLE001
-        raise CalendarError("failed to create event") from exc
+        raise CalendarError(api_failure("create event", exc)) from exc
     try:
         return resp["id"]
     except KeyError as exc:
@@ -118,11 +118,11 @@ def update_event(service: Any, *, calendar_id: str, event_id: str, fields: dict[
     try:
         service.events().patch(calendarId=calendar_id, eventId=event_id, body=fields).execute()
     except Exception as exc:  # noqa: BLE001
-        raise CalendarError("failed to update event") from exc
+        raise CalendarError(api_failure("update event", exc)) from exc
 
 
 def delete_event(service: Any, *, calendar_id: str, event_id: str) -> None:
     try:
         service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
     except Exception as exc:  # noqa: BLE001
-        raise CalendarError("failed to delete event") from exc
+        raise CalendarError(api_failure("delete event", exc)) from exc

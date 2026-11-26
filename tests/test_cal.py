@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import httplib2
 import pytest
+from googleapiclient.errors import HttpError
 
 from hermes_google.core.cal import (
     CalendarError,
@@ -127,3 +129,14 @@ def test_delete_event(mock_calendar_service: MagicMock) -> None:
     delete_event(mock_calendar_service, calendar_id="primary", event_id="e1")
     _, kwargs = mock_calendar_service.events().delete.call_args
     assert kwargs["eventId"] == "e1"
+
+
+def test_list_events_reports_api_reason(mock_calendar_service: MagicMock) -> None:
+    resp = httplib2.Response({"status": 404, "reason": "Not Found"})
+    content = b'{"error": {"code": 404, "message": "Not Found"}}'
+    call = MagicMock()
+    call.execute.side_effect = HttpError(resp, content, uri="u")
+    mock_calendar_service.events().list.return_value = call
+
+    with pytest.raises(CalendarError, match="list events failed: HTTP 404 Not Found"):
+        list_events(mock_calendar_service, calendar_id="c", time_min="s", time_max="e")
