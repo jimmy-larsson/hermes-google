@@ -572,6 +572,8 @@ def drive_get(file_id: str, export_mime_type: str | None = None) -> dict[str, An
     format, for example `application/pdf` for a Doc or
     `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` for a
     Sheet with several tabs. Other Google-native types need `export_mime_type`.
+    For binary files `export_mime_type` is ignored. Shortcuts cannot be
+    downloaded; use their target.
 
     The file is saved to ~/.cache/hermes-google/drive/<file_id>/<filename>.
     Use Claude Code's Read tool on the returned path to view the contents.

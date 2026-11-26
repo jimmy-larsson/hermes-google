@@ -478,3 +478,31 @@ def test_get_file_reports_a_blocked_target_instead_of_crashing(
     with pytest.raises(DriveError, match="export failed: IsADirectoryError"):
         get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
     assert (tmp_path / "drive" / "g1" / "Plan.md").is_dir()
+
+
+@pytest.mark.parametrize("bad", ["", "..", "a/b"])
+def test_get_file_checks_the_drive_name_before_adding_an_extension(
+    tmp_path: Path, mock_drive_service: MagicMock, bad: str
+) -> None:
+    _native_meta(mock_drive_service, bad, "application/vnd.google-apps.document")
+    with pytest.raises(DriveError, match="unsafe filename"):
+        get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+    mock_drive_service.files().export_media.assert_not_called()
+
+
+def test_get_file_refuses_a_shortcut(tmp_path: Path, mock_drive_service: MagicMock) -> None:
+    _native_meta(mock_drive_service, "Link", "application/vnd.google-apps.shortcut")
+    with pytest.raises(DriveError, match="cannot download a shortcut"):
+        get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+
+
+def test_get_file_xlsx_override_gets_the_xlsx_extension(
+    tmp_path: Path, mock_drive_service: MagicMock, mocker
+) -> None:
+    _native_meta(mock_drive_service, "Budget", "application/vnd.google-apps.spreadsheet")
+    _fake_download(mocker)
+    xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    path = get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path, export_mime_type=xlsx)
+    assert path.name == "Budget.xlsx"
+    _, kwargs = mock_drive_service.files().export_media.call_args
+    assert kwargs["mimeType"] == xlsx

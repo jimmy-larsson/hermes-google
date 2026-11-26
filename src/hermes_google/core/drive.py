@@ -48,6 +48,8 @@ def _export_type(mime_type: str, export_mime_type: str | None) -> str | None:
         return None
     if mime_type == FOLDER_MIME_TYPE:
         raise DriveError("cannot download a folder; use drive_list")
+    if mime_type == "application/vnd.google-apps.shortcut":
+        raise DriveError("cannot download a shortcut; open its target file instead")
     chosen = export_mime_type or _EXPORT_DEFAULTS.get(mime_type)
     if not chosen:
         raise DriveError(f"cannot download {mime_type}: pass export_mime_type")
@@ -117,11 +119,9 @@ def get_file(
 
     export_as = _export_type(meta.get("mimeType", ""), export_mime_type)
     raw_name = meta["name"]
-    if export_as:
-        raw_name = _with_extension(raw_name, export_as)
-    safe_name = os.path.basename(raw_name)
-    if safe_name != raw_name or _is_unsafe_name(safe_name):
+    if os.path.basename(raw_name) != raw_name or _is_unsafe_name(raw_name):
         raise DriveError(f"unsafe filename: {raw_name!r}")
+    safe_name = _with_extension(raw_name, export_as) if export_as else raw_name
 
     target_dir = cache_dir / "drive" / file_id
     target_dir.mkdir(parents=True, exist_ok=True)
