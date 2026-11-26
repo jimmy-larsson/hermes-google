@@ -17,6 +17,7 @@ from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from google.auth.exceptions import RefreshError
 from pydantic import Field
 
 from hermes_google.core import auth as auth_core
@@ -111,27 +112,35 @@ def _reset_services() -> None:
     _services = None
 
 
-def _auto_retry(fn):
-    """Retry once with fresh credentials when the stored token was replaced.
+def _is_auth_failure(exc: ServiceError) -> bool:
+    if isinstance(exc, AuthError):
+        return True
+    cause = exc.__cause__
+    return isinstance(cause, RefreshError) or getattr(cause, "status_code", None) == 401
 
-    After ``auth login`` writes a new token.json the cached credentials are
-    stale and fail with AuthError; the cache is dropped and the call runs
-    again against the new token.  Any other ServiceError is reported at
-    once, so a request that reached Google is never repeated.
+
+def _auto_retry(fn):
+    """Retry once with fresh credentials when Google rejects the stored token.
+
+    A rejected credential (AuthError while loading, a RefreshError, or an
+    HTTP 401) means the request never executed, so the cached config and
+    services are dropped and the call runs once more against the token on
+    disk.  Any other ServiceError is reported at once, so a request that
+    reached Google is never repeated.
     """
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except AuthError:
+        except ServiceError as exc:
+            if not _is_auth_failure(exc):
+                raise ToolError(str(exc)) from exc
             _reset_services()
             try:
                 return fn(*args, **kwargs)
-            except ServiceError as exc:
-                raise ToolError(str(exc)) from exc
-        except ServiceError as exc:
-            raise ToolError(str(exc)) from exc
+            except ServiceError as retry_exc:
+                raise ToolError(str(retry_exc)) from retry_exc
 
     return wrapper
 
