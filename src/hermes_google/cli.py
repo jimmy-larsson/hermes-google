@@ -72,8 +72,8 @@ def cmd_auth_revoke(_args: argparse.Namespace) -> int:
     if leftovers:
         names = ", ".join(str(p) for p in leftovers)
         print(f"cache partly cleared at {cfg.cache_dir}; could not remove: {names}")
-    else:
-        print(f"cache cleared at {cfg.cache_dir}")
+        return 1
+    print(f"cache cleared at {cfg.cache_dir}")
     return 0
 
 
