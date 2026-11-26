@@ -829,3 +829,19 @@ def test_auto_retry_reloads_once_on_auth_error(mocker) -> None:
     assert mcp_server.mail_list_pending() == []
     assert services.call_count == 2
     reset.assert_called_once()
+
+
+def test_get_services_prunes_the_cache_once_per_build(mocker, tmp_path) -> None:
+    from hermes_google import mcp_server
+
+    mcp_server._reset_services()
+    mocker.patch.object(mcp_server, "_get_config", return_value=MagicMock(cache_dir=tmp_path))
+    mocker.patch.object(mcp_server, "_get_credentials", return_value=MagicMock())
+    mocker.patch.object(mcp_server.auth_core, "build_services", return_value=MagicMock())
+    prune = mocker.patch.object(mcp_server.cache_core, "prune_cache", return_value=0)
+
+    mcp_server._get_services()
+    mcp_server._get_services()
+
+    prune.assert_called_once_with(tmp_path)
+    mcp_server._reset_services()
