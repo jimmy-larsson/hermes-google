@@ -447,3 +447,34 @@ def test_get_file_download_failure_reports_reason_and_removes_partial(
     with pytest.raises(DriveError, match="download failed: HTTP 403 The user does not have"):
         get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
     assert not (tmp_path / "drive" / "g1" / "scan.pdf").exists()
+
+
+def test_get_file_export_failure_reports_reason_and_removes_partial(
+    tmp_path: Path, mock_drive_service: MagicMock, mocker
+) -> None:
+    _native_meta(mock_drive_service, "Plan", "application/vnd.google-apps.document")
+    resp = httplib2.Response({"status": 403, "reason": "Forbidden"})
+    content = b'{"error": {"code": 403, "message": "Export only supports Docs Editors files."}}'
+
+    def _downloader(fh, request):  # noqa: ARG001
+        fh.write(b"partial")
+        instance = MagicMock()
+        instance.next_chunk.side_effect = HttpError(resp, content, uri="u")
+        return instance
+
+    mocker.patch("hermes_google.core.drive.MediaIoBaseDownload", side_effect=_downloader)
+
+    with pytest.raises(DriveError, match="export failed: HTTP 403 Export only supports"):
+        get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+    assert not (tmp_path / "drive" / "g1" / "Plan.md").exists()
+
+
+def test_get_file_reports_a_blocked_target_instead_of_crashing(
+    tmp_path: Path, mock_drive_service: MagicMock
+) -> None:
+    _native_meta(mock_drive_service, "Plan", "application/vnd.google-apps.document")
+    (tmp_path / "drive" / "g1" / "Plan.md").mkdir(parents=True)
+
+    with pytest.raises(DriveError, match="export failed: IsADirectoryError"):
+        get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path)
+    assert (tmp_path / "drive" / "g1" / "Plan.md").is_dir()

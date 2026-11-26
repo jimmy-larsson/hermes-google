@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import mimetypes
 import os
 from dataclasses import dataclass
@@ -142,7 +143,8 @@ def get_file(
             while not done:
                 _status, done = downloader.next_chunk()
     except Exception as exc:  # noqa: BLE001
-        target.unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            target.unlink()
         raise DriveError(api_failure("export" if export_as else "download", exc)) from exc
     return target
 
