@@ -506,3 +506,16 @@ def test_get_file_xlsx_override_gets_the_xlsx_extension(
     assert path.name == "Budget.xlsx"
     _, kwargs = mock_drive_service.files().export_media.call_args
     assert kwargs["mimeType"] == xlsx
+
+
+def test_get_file_office_extensions_do_not_depend_on_the_host_mime_table(
+    tmp_path: Path, mock_drive_service: MagicMock, mocker
+) -> None:
+    _native_meta(mock_drive_service, "Budget", "application/vnd.google-apps.spreadsheet")
+    _fake_download(mocker)
+    mocker.patch("hermes_google.core.drive.mimetypes.guess_extension", return_value=None)
+    xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    path = get_file(mock_drive_service, file_id="g1", cache_dir=tmp_path, export_mime_type=xlsx)
+
+    assert path.name == "Budget.xlsx"

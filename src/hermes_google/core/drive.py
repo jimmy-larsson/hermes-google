@@ -40,7 +40,14 @@ _EXPORT_DEFAULTS = {
     "application/vnd.google-apps.spreadsheet": "text/csv",
     "application/vnd.google-apps.presentation": "application/pdf",
 }
-_EXPORT_EXTENSIONS = {"text/markdown": ".md", "text/csv": ".csv", "application/pdf": ".pdf"}
+_EXPORT_EXTENSIONS = {
+    "text/markdown": ".md",
+    "text/csv": ".csv",
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+}
 
 
 def _export_type(mime_type: str, export_mime_type: str | None) -> str | None:
