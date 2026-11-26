@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from hermes_google.core.cache import MAX_AGE_DAYS, clear_cache, prune_cache
 
 DAY = 86400
@@ -86,6 +88,7 @@ def test_prune_skips_symlinks(tmp_path: Path) -> None:
         outside.unlink()
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
 def test_clear_cache_reports_what_it_could_not_remove(tmp_path: Path) -> None:
     locked = tmp_path / "locked"
     locked.mkdir()
