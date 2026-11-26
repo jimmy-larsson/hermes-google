@@ -178,3 +178,26 @@ def test_load_credentials_accepts_superset_of_scopes(
         auth_module.Credentials, "from_authorized_user_file", return_value=_FakeCreds()
     )
     assert load_credentials(path).valid is True
+
+
+def test_load_credentials_reports_a_rejected_refresh_as_auth_error(
+    tmp_path: Path, mocker: pytest_mock.MockerFixture
+) -> None:
+    from google.auth.exceptions import RefreshError
+
+    path = tmp_path / "credentials.json"
+    save_credentials(_FakeCreds(expired=True), path)  # type: ignore[arg-type]
+
+    class _Rejected(_FakeCreds):
+        def refresh(self, _request) -> None:
+            raise RefreshError("invalid_grant: Token has been expired or revoked.")
+
+    mocker.patch.object(
+        auth_module.Credentials,
+        "from_authorized_user_file",
+        return_value=_Rejected(token="loaded", expired=True),
+    )
+    mocker.patch.object(auth_module, "Request", lambda: object())
+
+    with pytest.raises(AuthError, match="rejected by Google; run `hermes-google auth login`"):
+        load_credentials(path)
