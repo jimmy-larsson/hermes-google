@@ -6,8 +6,10 @@ import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import httplib2
 import pytest
 from fastmcp.exceptions import ToolError
+from googleapiclient.errors import HttpError
 
 
 def _tool_map():
@@ -845,3 +847,82 @@ def test_get_services_prunes_the_cache_once_per_build(mocker, tmp_path) -> None:
 
     prune.assert_called_once_with(tmp_path)
     mcp_server._reset_services()
+
+
+def _with_cause(exc: Exception, cause: Exception) -> Exception:
+    exc.__cause__ = cause
+    return exc
+
+
+def _http_error(status: int, message: str) -> HttpError:
+    resp = httplib2.Response({"status": status, "reason": message})
+    content = f'{{"error": {{"code": {status}, "message": "{message}"}}}}'.encode()
+    return HttpError(resp, content, uri="u")
+
+
+def test_auto_retry_reloads_once_when_google_rejects_the_credentials(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drive import DriveError
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    spy = mocker.patch.object(
+        mcp_server.drive_core,
+        "delete_file",
+        side_effect=[
+            _with_cause(
+                DriveError("delete failed: HTTP 401 Invalid Credentials"),
+                _http_error(401, "Invalid Credentials"),
+            ),
+            None,
+        ],
+    )
+    reset = mocker.patch.object(mcp_server, "_reset_services")
+
+    assert mcp_server.drive_delete(file_id="f1") == {"id": "f1"}
+    assert spy.call_count == 2
+    reset.assert_called_once()
+
+
+def test_auto_retry_reloads_once_on_refresh_error(mocker) -> None:
+    from google.auth.exceptions import RefreshError
+
+    from hermes_google import mcp_server
+    from hermes_google.core.mail import MailError
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    spy = mocker.patch.object(
+        mcp_server.mail_core,
+        "list_pending",
+        side_effect=[
+            _with_cause(
+                MailError("list messages failed: RefreshError: invalid_grant"),
+                RefreshError("invalid_grant"),
+            ),
+            [],
+        ],
+    )
+    reset = mocker.patch.object(mcp_server, "_reset_services")
+
+    assert mcp_server.mail_list_pending() == []
+    assert spy.call_count == 2
+    reset.assert_called_once()
+
+
+def test_auto_retry_does_not_repeat_other_http_failures(mocker) -> None:
+    from hermes_google import mcp_server
+    from hermes_google.core.drive import DriveError
+
+    mocker.patch.object(mcp_server, "_get_services", return_value=MagicMock())
+    spy = mocker.patch.object(
+        mcp_server.drive_core,
+        "delete_file",
+        side_effect=_with_cause(
+            DriveError("delete failed: HTTP 500 Backend Error"), _http_error(500, "Backend Error")
+        ),
+    )
+    reset = mocker.patch.object(mcp_server, "_reset_services")
+
+    with pytest.raises(ToolError, match="delete failed"):
+        mcp_server.drive_delete(file_id="f1")
+    assert spy.call_count == 1
+    reset.assert_not_called()
